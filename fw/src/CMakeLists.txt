@@ -16,12 +16,18 @@ add_compile_options(-Wall -Wextra -Werror -Wno-unused-function -Wno-unused-param
 file(GLOB SOURCES
   "*.c"
   "board/*.c"
+  "comms/*.c"
+  "leds/*.c"
+  "sensors/*.c"
 )
 
 # Add local includes
 include_directories(
   "."
   "board"
+  "comms"
+  "leds"
+  "sensors"
 )
 
 # Add the top-level executable

@@ -1,0 +1,31 @@
+pinconfig:
+  description: >
+    This section shows how the RPi's pins are configured.
+    'pin' is the GPIO/BCM number for the pin.
+    'physical' is the physical pin number.
+  screen:
+    i2c-sda:
+      pin: 2
+      physical: 3
+    i2c-scl:
+      pin: 3
+      physical: 5
+  mcu:
+    swdio:
+      pin: 5
+      physical: 29
+    swclk:
+      pin: 6
+      physical: 31
+    spi0-ce:
+      pin: 8
+      physical: 24
+    spi0-miso:
+      pin: 9
+      physical: 21
+    spi0-mosi:
+      pin: 10
+      physical: 19
+    spi0-sclk:
+      pin: 11
+      physical: 23

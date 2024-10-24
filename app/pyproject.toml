@@ -15,6 +15,7 @@ classifiers = [
 ]
 dependencies = [
     "PyQt6",
+    "PyYAML",
 ]
 license = {text = "MIT"}
 
