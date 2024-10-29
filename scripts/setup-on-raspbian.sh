@@ -4,24 +4,32 @@
 
 # Install apt dependencies
 sudo apt-get update
-sudo apt-get install -y python3 vim git python3-smbus2 python3-picamera2 openocd
+sudo apt-get install -y python3 vim git python3-smbus2 python3-picamera2 openocd hailo-all
 
 # Install application and dependencies
 cd ../app
 pip install -e .[rpi]
 
 # Install things necessary for Waveshare display
-dtoverlay=vc4-kms-v3d
-#DSI1 Use
-dtoverlay=vc4-kms-dsi-waveshare-panel,4_0_inch
-#DSI0 Use
-#dtoverlay=vc4-kms-dsi-waveshare-panel,4_0_inch,dsi0
+echo "\
+dtoverlay=vc4-kms-v3d\n\
+dtoverlay=vc4-kms-dsi-waveshare-panel,4_0_inch\n\
+" | sudo tee -a /boot/firmware/config.txt > /dev/null
 
 # Install the brightness script
+cd ../
 wget https://files.waveshare.com/upload/f/f4/Brightness.zip
 unzip Brightness.zip
 cd Brightness
 sudo chmod +x install.sh
 ./install.sh
+cd ../
 
-# Install 
+# Install Camera
+# TODO: Once the camera muxing is figured out
+
+# Install Hailo
+echo "dtparam=pciex1_gen=3" | sudo tee -a /boot/firmware/config.txt > /dev/null
+
+# Reboot
+echo "Done. Some changes require a reboot to take effect."

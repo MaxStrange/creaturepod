@@ -1,6 +1,7 @@
 """
 """
 from ..libraries.common import appconfig
+from ..libraries.common import log
 from ..libraries.coprocessors import ai
 from ..libraries.coprocessors import mcu
 from ..libraries.outputs import leds
@@ -22,29 +23,49 @@ def main():
     # Parse the config file
     config = appconfig.load_config_file()
 
+    # Set up logging
+    log.init(config)
+    log.enable_logging_to_console(config)
+
     # Initialize all the hardware singletons
     hailoproc = ai.AICoprocessor(config)
     flashlight = leds.FlashLight(config)
     display = screen.Display(config)
-    front_camera = cameras.Camera()  # TODO
-    rear_camera = cameras.Camera()   # TODO
+    front_camera = cameras.FrontCamera(config)
+    rear_camera = cameras.RearCamera(config)
 
     # For now, run a simple sequence to test the power draw
     power_draw_idle = _read_power_number()
+
     ## Screen
-    display.turn_on()
+    err = display.turn_on()
+    if err:
+        log.error(f"Error when turning on the display: {err}")
+
     power_draw_screen_only = _read_power_number()
-    display.turn_off()
+
+    err = display.turn_off()
+    if err:
+        log.error(f"Error when turning off the display: {err}")
+
     ## Camera
-    video_fpath = "./scratch-video.mp4"
-    front_camera.stream_to_file(video_fpath)
+    video_fpath = "./scratch-video.h264"
+    err = front_camera.stream_to_file(video_fpath)
+    if err:
+        log.error(f"Error when trying to stream the camera output to a file: {err}")
+
     power_draw_camera_only = _read_power_number()
-    front_camera.stop()
+
+    err = front_camera.stop_streaming()
+    if err:
+        log.error(f"Error when trying to stop the camera: {err}")
+
     ## AI Module
     hailoproc.load_model("./TODO")
     hailoproc.inference_on_file(video_fpath, loop=True)
     power_draw_hailo_only = _read_power_number()
     hailoproc.stop()
+
     ## All at once
     display.turn_on()
     stream_handle = front_camera.stream_to_coprocessor()

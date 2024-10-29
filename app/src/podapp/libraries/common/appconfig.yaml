@@ -3,13 +3,18 @@ pinconfig:
     This section shows how the RPi's pins are configured.
     'pin' is the GPIO/BCM number for the pin.
     'physical' is the physical pin number.
-  screen:
-    i2c-sda:
-      pin: 2
-      physical: 3
-    i2c-scl:
-      pin: 3
-      physical: 5
+  cameras:
+    camera-mux:
+      pin: 17
+      physical: 11
+    front-camera:
+      # The 'id' as reported by Picamera2.global_camera_info() ; need to figure out the camera mux
+      id: "cam0"
+      mux-active-level: "LOW"
+    rear-camera:
+      # The 'id' as reported by Picamera2.global_camera_info() ; need to figure out the camera mux
+      id: "cam1"
+      mux-active-level: "HIGH"
   mcu:
     swdio:
       pin: 5
@@ -29,3 +34,20 @@ pinconfig:
     spi0-sclk:
       pin: 11
       physical: 23
+  screen:
+    i2c-sda:
+      pin: 2
+      physical: 3
+    i2c-scl:
+      pin: 3
+      physical: 5
+moduleconfig:
+  description: >
+    This section shows the various modules' specific customizations.
+  logging:
+    log-file-path: "/logs/creaturepod.txt"
+    log-file-path-dev: "./creaturepod.txt"
+    # DEBUG, INFO, WARNING, ERROR
+    log-level: "DEBUG"
+  screen:
+    timeout-seconds: 5
