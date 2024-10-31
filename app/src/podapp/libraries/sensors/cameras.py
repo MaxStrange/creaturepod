@@ -59,6 +59,13 @@ class Camera:
         """
         GPIO.output(self.cam_mux, self.mux_level)
 
+    def shutdown(self) -> None:
+        """
+        Clean shutdown function.
+        """
+        self.stop_streaming()
+        GPIO.cleanup(self.cam_mux)
+
     def stream_to_file(self, fpath: str) -> Exception|None:
         """
         Asynchronously stream to a file.

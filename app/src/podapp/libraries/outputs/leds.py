@@ -27,6 +27,13 @@ class FlashLight:
         """
         return not self.on
 
+    def shutdown(self) -> None:
+        """
+        Clean shutdown function.
+        """
+        # TODO
+        pass
+
     def turn_on(self) -> None:
         """
         Turn on the LED.

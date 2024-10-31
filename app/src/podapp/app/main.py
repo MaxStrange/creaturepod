@@ -7,7 +7,20 @@ from ..libraries.coprocessors import mcu
 from ..libraries.outputs import leds
 from ..libraries.outputs import screen
 from ..libraries.sensors import cameras
+from typing import Any
+from typing import List
+import functools
 import os
+import signal
+
+def _clean_exit(hardware_objects: List[Any]):
+    """
+    Shut down the application cleanly by calling 'shutdown()' on each object.
+    """
+    log.info("CTRL-C being handled. Shutting down all hardware objects...")
+    for o in hardware_objects:
+        if hasattr(o, 'shutdown'):
+            o.shutdown()
 
 def _read_power_number() -> float:
     power_val = None
@@ -33,6 +46,10 @@ def main():
     display = screen.Display(config)
     front_camera = cameras.FrontCamera(config)
     rear_camera = cameras.RearCamera(config)
+
+    # Set up signal handler for SIGINT (Ctrl-C)
+    signal_handler = functools.partial(_clean_exit, hardware_objects=[hailoproc, flashlight, display, front_camera, rear_camera])
+    signal.signal(signal.SIGINT, signal_handler)
 
     # For now, run a simple sequence to test the power draw
     power_draw_idle = _read_power_number()

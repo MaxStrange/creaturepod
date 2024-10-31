@@ -44,6 +44,15 @@ pinconfig:
 moduleconfig:
   description: >
     This section shows the various modules' specific customizations.
+  gstreamer-utils:
+    queue-params:
+      description: >
+        This section contains overrides for the default parameters of GStreamer queues.
+        See https://gstreamer.freedesktop.org/documentation/coreelements/queue.html?gi-language=c#properties
+      max-buffers: 3
+      max-bytes: 0
+      max-time: 0
+      leaky: "no"
   logging:
     log-file-path: "/logs/creaturepod.txt"
     log-file-path-dev: "./creaturepod.txt"

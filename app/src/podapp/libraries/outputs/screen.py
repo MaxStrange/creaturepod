@@ -20,6 +20,13 @@ class Display:
         self.touch_i2c_scl_pin = int(config['pinconfig']['screen']['i2c-scl']['pin'])
         self.timeout_seconds = int(config['moduleconfig']['screen']['timeout-seconds'])
 
+    def shutdown(self) -> None:
+        """
+        Clean shutdown function.
+        """
+        # TODO
+        pass
+
     def on(self) -> Tuple[Exception|None, bool|None]:
         """
         Is the screen on?
