@@ -1,5 +1,7 @@
 """
 Provides utilities for building and running GStreamer pipelines.
+
+Much code in this module was based on HAILO AI examples, with heavy modification.
 """
 from ..common import log
 from typing import Any
@@ -69,47 +71,91 @@ class GStreamerSource:
         )
 
 class GStreamerApp:
-    def __init__(self, source: GStreamerSource) -> None:
+    def __init__(self, name: str, source: GStreamerSource) -> None:
+        self.name = name
         self.source = source
+        self.repeat_on_end_of_stream = False
 
         # Create the pipeline
         Gst.init(None)
         pipeline_string = " ! ".join([self.source.element_pipeline])
         self.pipeline = Gst.parse_launch(pipeline_string)
 
+        # Save dot file (if desired)
+        if os.environ.get("GST_DEBUG_DUMP_DOT_DIR", None) is not None:
+            Gst.debug_bin_to_dot_file(self.pipeline, Gst.DebugGraphDetails.ALL, self.name)
+
         # Create the mainloop
         self.loop = GLib.MainLoop()
 
-    def bus_call(self, bus, message, loop):
-        t = message.type
-        if t == Gst.MessageType.EOS:
-            print("End-of-stream")
-            self.on_eos()
-        elif t == Gst.MessageType.ERROR:
-            err, debug = message.parse_error()
-            print(f"Error: {err}, {debug}")
-            self.shutdown()
-        # QOS
-        elif t == Gst.MessageType.QOS:
-            # Handle QoS message here
-            qos_element = message.src.get_name()
-            print(f"QoS message received from {qos_element}")
-        return True
-
-    def on_eos(self):
-        if self.source_type == "file":
+    def _handle_end_of_stream(self) -> bool:
+        """
+        Attempt to handle EOS. Return success or not. Loop from the beginning
+        of the stream if `self.repeat_on_end_of_stream`, otherwise just shut down
+        the pipeline.
+        """
+        if self.repeat_on_end_of_stream:
              # Seek to the start (position 0) in nanoseconds
             success = self.pipeline.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH, 0)
-            if success:
-                print("Video rewound successfully. Restarting playback...")
-            else:
-                print("Error rewinding the video.")
         else:
             self.shutdown()
+            success = True
+
+        if not success:
+            log.error(f"Could not rewind pipeline {self.name}")
+
+        return success
+
+    def bus_call(self, bus, message, loop) -> bool:
+        """
+        Handler for GStreamer bus messages.
+
+        See: https://gstreamer.freedesktop.org/documentation/additional/design/messages.html?gi-language=c
+        """
+        match message.type:
+            case Gst.MessageType.EOS:
+                # End of stream
+                return self._handle_end_of_stream()
+            case Gst.MessageType.INFO:
+                # An info debug message ocurred in the pipeline
+                info, debug = message.parse_warning()
+                log.info(f"Info in the GStreamer pipeline {self.name}: {info}, {debug}")
+                return True
+            case Gst.MessageType.WARNING:
+                # A warning ocurred in the pipeline
+                warning, debug = message.parse_warning()
+                log.warning(f"Warning in the GStreamer pipeline {self.name}: {warning}, {debug}")
+                return True
+            case Gst.MessageType.ERROR:
+                # An error ocurred in the pipeline
+                err, debug = message.parse_error()
+                log.error(f"Error in the GStreamer pipeline {self.name}: {err}, {debug}")
+                self.shutdown()
+                return True
+            case Gst.MessageType.QOS:
+                # Quality of streaming notification
+                qos_element = message.src.get_name()
+                log.warning(f"Quality of service message received from pipeline {self.name}, element {qos_element}. Message: {message.get_details()}")
+                return True
+            case Gst.MessageType.STREAM_STATUS:
+                # A change in the stream status
+                status, owner = message.parse_stream_status()
+                log.info(f"Stream status changed in pipeline {self.name}: {status}. Owner: {owner}")
+                return True
+            case Gst.MessageType.ELEMENT:
+                # Element-specific bus message. Potentially could want a handler.
+                # TODO: Add element-wise handlers?
+                log.info(f"Pipeline {self.name} received an element-specific message from {message.src.get_name()}: {message.get_details()}")
+                return True
+            case _:
+                # There are a ton of possible message types. Mostly just ignore them and pretend like we handled them.
+                log.debug(f"Received a bus message that we do not handle on pipeline {self.name}: {message.get_details()}")
+                return True
 
     def shutdown(self, signum=None, frame=None):
-        print("Shutting down... Hit Ctrl-C again to force quit.")
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        """
+        Clean shutdown.
+        """
         self.pipeline.set_state(Gst.State.PAUSED)
         GLib.usleep(100000)  # 0.1 second delay
 
@@ -119,16 +165,15 @@ class GStreamerApp:
         self.pipeline.set_state(Gst.State.NULL)
         GLib.idle_add(self.loop.quit)
 
-    def get_pipeline_string(self):
-        # This is a placeholder function that should be overridden by the child class
-        return ""
+    def run(self, repeat_on_end_of_stream=False):
+        """
+        Run the pipeline. Argument `repeat_on_end_of_stream` most likely only makes
+        sense (and will probably only work) in the case of a file input source.
+        """
+        self.repeat_on_end_of_stream = repeat_on_end_of_stream
 
-    def dump_dot_file(self):
-        print("Dumping dot file...")
-        Gst.debug_bin_to_dot_file(self.pipeline, Gst.DebugGraphDetails.ALL, "pipeline")
-        return False
 
-    def run(self):
+
         # Add a watch for messages on the pipeline's bus
         bus = self.pipeline.get_bus()
         bus.add_signal_watch()
