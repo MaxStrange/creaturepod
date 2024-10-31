@@ -21,10 +21,18 @@ class AICoprocessor:
         # TODO
         pass
 
-    def set_source(self, source):
+    def set_source(self, source_uri: str) -> Exception|None:
         """
+        Set the source of the AI processing pipeline.
+
+        `source_uri`: (`str`) The URI for the source of video. A camera ID like 'cam0' as found
+        in the appconfig YAML file will be treated as a Raspberry Pi camera module coming over the
+        corresponding (0 or 1) CSI port.
         """
-        pass
+        if not gstreamer_utils.source_uri_valid(source_uri):
+            return ValueError(f"Invalid source URI: {source_uri}")
+
+        self.source = gstreamer_utils.GStreamerSource(source_uri)
 
     def set_preprocess_function(self, preproc_fun):
         """

@@ -53,6 +53,9 @@ moduleconfig:
       max-bytes: 0
       max-time: 0
       leaky: "no"
+    dot-graph:
+      save: True
+      dpath: "/logs"
   logging:
     log-file-path: "/logs/creaturepod.txt"
     log-file-path-dev: "./creaturepod.txt"

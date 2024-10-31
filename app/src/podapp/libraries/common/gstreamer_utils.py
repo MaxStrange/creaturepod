@@ -1,6 +1,7 @@
 """
 Provides utilities for building and running GStreamer pipelines.
 """
+from ..common import log
 from typing import Any
 from typing import Dict
 import gi
@@ -56,7 +57,7 @@ class GStreamerSource:
             # RTSP camera or something. Not currently supported.
             raise ValueError(f"Given a source_uri that is not supported: {source_uri}")
 
-        # TODO: Remove elements here that we don't need/want
+        # TODO: Remove elements here that we don't need/want. E.g., the videoscale and videoconvert portions don't seem to do anything. Verify and remove them.
         self.element_pipeline = (
             f'{source_element} '
             f'queue name=f"{name}_queue_scale" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
@@ -69,52 +70,14 @@ class GStreamerSource:
 
 class GStreamerApp:
     def __init__(self, source: GStreamerSource) -> None:
-        self.video_source = self.options_menu.input
-        self.source_type = get_source_type(self.video_source)
-        self.user_data = user_data
-        self.video_sink = "xvimagesink"
-        self.pipeline = None
-        self.loop = None
+        self.source = source
 
-        # Set Hailo parameters; these parameters should be set based on the model used
-        self.batch_size = 1
-        self.network_width = 640
-        self.network_height = 640
-        self.network_format = "RGB"
-        self.hef_path = None
-        self.app_callback = None
-
-        # Set user data parameters
-        user_data.use_frame = self.options_menu.use_frame
-
-        self.sync = "false" if (self.options_menu.disable_sync or self.source_type != "file") else "true"
-        self.show_fps = "true" if self.options_menu.show_fps else "false"
-
-        if self.options_menu.dump_dot:
-            os.environ["GST_DEBUG_DUMP_DOT_DIR"] = self.current_path
-
-    def on_fps_measurement(self, sink, fps, droprate, avgfps):
-        print(f"FPS: {fps:.2f}, Droprate: {droprate:.2f}, Avg FPS: {avgfps:.2f}")
-        return True
-
-    def create_pipeline(self):
-        # Initialize GStreamer
+        # Create the pipeline
         Gst.init(None)
+        pipeline_string = " ! ".join([self.source.element_pipeline])
+        self.pipeline = Gst.parse_launch(pipeline_string)
 
-        pipeline_string = self.get_pipeline_string()
-        try:
-            self.pipeline = Gst.parse_launch(pipeline_string)
-        except Exception as e:
-            print(e)
-            print(pipeline_string)
-            sys.exit(1)
-
-        # Connect to hailo_display fps-measurements
-        if self.show_fps:
-            print("Showing FPS")
-            self.pipeline.get_by_name("hailo_display").connect("fps-measurements", self.on_fps_measurement)
-
-        # Create a GLib Main Loop
+        # Create the mainloop
         self.loop = GLib.MainLoop()
 
     def bus_call(self, bus, message, loop):
@@ -133,7 +96,6 @@ class GStreamerApp:
             print(f"QoS message received from {qos_element}")
         return True
 
-
     def on_eos(self):
         if self.source_type == "file":
              # Seek to the start (position 0) in nanoseconds
@@ -144,7 +106,6 @@ class GStreamerApp:
                 print("Error rewinding the video.")
         else:
             self.shutdown()
-
 
     def shutdown(self, signum=None, frame=None):
         print("Shutting down... Hit Ctrl-C again to force quit.")
@@ -157,7 +118,6 @@ class GStreamerApp:
 
         self.pipeline.set_state(Gst.State.NULL)
         GLib.idle_add(self.loop.quit)
-
 
     def get_pipeline_string(self):
         # This is a placeholder function that should be overridden by the child class
@@ -219,14 +179,36 @@ def configure(config: Dict[str, Any]):
     """
     Configure the gstreamer utils.
     """
-    if 'gstreamer-utils' not in config:
+    if 'gstreamer-utils' not in config['moduleconfig']:
         return
 
-    gstreamer_config = config['gstreamer-utils']
+    gstreamer_config = config['moduleconfig']['gstreamer-utils']
 
+    # Queue params
     if 'queue-params' in gstreamer_config:
         leaky = gstreamer_config['queue-params'].get('leaky', QUEUE_PARAMS.leaky)
         max_buffers = gstreamer_config['queue-params'].get('max-buffers', QUEUE_PARAMS.max_buffers)
         max_bytes = gstreamer_config['queue-params'].get('max-bytes', QUEUE_PARAMS.max_bytes)
         max_time = gstreamer_config['queue-params'].get('max-time', QUEUE_PARAMS.max_time)
         QUEUE_PARAMS = QueueParams(leaky=leaky, max_buffers=max_buffers, max_bytes=max_bytes, max_time=max_time)
+
+    # Dot graph (the GStreamer pipeline can print itself to a dot file)
+    if 'dot-graph' in gstreamer_config and gstreamer_config['dot-graph']['save']:
+        dpath = gstreamer_config['dot-graph']['dpath']
+        if os.path.isdir(dpath):
+            os.environ["GST_DEBUG_DUMP_DOT_DIR"] = dpath
+        else:
+            log.warning(f"Config file's moduleconfig->gstreamer-utils->dot-graph->dpath does not point to a directory. Given {dpath}")
+
+def source_uri_valid(source_uri: str) -> bool:
+    """
+    Return whether the given source URI is valid.
+    """
+    if os.path.isfile(source_uri):
+        return True
+    elif source_uri == "cam0":
+        return True
+    elif source_uri == "cam1":
+        return True
+    else:
+        return False
