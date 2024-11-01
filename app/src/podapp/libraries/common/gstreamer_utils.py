@@ -172,53 +172,22 @@ class GStreamerApp:
         """
         self.repeat_on_end_of_stream = repeat_on_end_of_stream
 
-
-
         # Add a watch for messages on the pipeline's bus
         bus = self.pipeline.get_bus()
         bus.add_signal_watch()
         bus.connect("message", self.bus_call, self.loop)
 
-        # Connect pad probe to the identity element
-        identity = self.pipeline.get_by_name("identity_callback")
-        if identity is None:
-            print("Warning: identity_callback element not found, add <identity name=identity_callback> in your pipeline where you want the callback to be called.")
-        else:
-            identity_pad = identity.get_static_pad("src")
-            identity_pad.add_probe(Gst.PadProbeType.BUFFER, self.app_callback, self.user_data)
-
-        hailo_display = self.pipeline.get_by_name("hailo_display")
-        if hailo_display is None:
-            print("Warning: hailo_display element not found, add <fpsdisplaysink name=hailo_display> to your pipeline to support fps display.")
-        else:
-            xvimagesink = hailo_display.get_by_name("xvimagesink0")
-            if xvimagesink is not None:
-                xvimagesink.set_property("qos", False)
-
         # Disable QoS to prevent frame drops
         disable_qos(self.pipeline)
 
-        # Start a subprocess to run the display_user_data_frame function
-        if self.options_menu.use_frame:
-            display_process = multiprocessing.Process(target=display_user_data_frame, args=(self.user_data,))
-            display_process.start()
-
         # Set pipeline to PLAYING state
         self.pipeline.set_state(Gst.State.PLAYING)
-
-        # Dump dot file
-        if self.options_menu.dump_dot:
-            GLib.timeout_add_seconds(3, self.dump_dot_file)
 
         # Run the GLib event loop
         self.loop.run()
 
         # Clean up
-        self.user_data.running = False
         self.pipeline.set_state(Gst.State.NULL)
-        if self.options_menu.use_frame:
-            display_process.terminate()
-            display_process.join()
 
 def configure(config: Dict[str, Any]):
     """
@@ -244,6 +213,29 @@ def configure(config: Dict[str, Any]):
             os.environ["GST_DEBUG_DUMP_DOT_DIR"] = dpath
         else:
             log.warning(f"Config file's moduleconfig->gstreamer-utils->dot-graph->dpath does not point to a directory. Given {dpath}")
+
+def disable_qos(pipeline):
+    """
+    Iterate through all elements in the given GStreamer pipeline and set the qos property to False
+    where applicable.
+    When the 'qos' property is set to True, the element will measure the time it takes to process each
+    buffer and will drop frames if latency is too high.
+    We are running on long pipelines, so we want to disable this feature to avoid dropping frames.
+    
+    This function is taken almost completely from HAILO examples repo.
+    """
+    # Iterate through all elements in the pipeline
+    it = pipeline.iterate_elements()
+    while True:
+        result, element = it.next()
+        if result != Gst.IteratorResult.OK:
+            break
+
+        # Check if the element has the 'qos' property
+        if 'qos' in GObject.list_properties(element):
+            # Set the 'qos' property to False
+            element.set_property('qos', False)
+            log.debug(f"Set qos to False for {element.get_name()}")
 
 def source_uri_valid(source_uri: str) -> bool:
     """
