@@ -6,6 +6,7 @@ Much code in this module was based on HAILO AI examples, with heavy modification
 from ..common import log
 from typing import Any
 from typing import Dict
+from typing import List
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import GLib
@@ -20,7 +21,18 @@ import collections
 QueueParams = collections.namedtuple("QueueParams", "max_buffers max_bytes max_time leaky")
 QUEUE_PARAMS = QueueParams(max_buffers=3, max_bytes=0, max_time=0, leaky='no')
 
-class GStreamerSource:
+class Element:
+    """
+    A Python wrapper around a GStreamer element.
+
+    Each `Element` class should define an `element_pipeline` property,
+    which is a string that can be used in a parse and launch call.
+    """
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.element_pipeline = None
+
+class GStreamerSource(Element):
     """
     A class to encapsulate a GStreamer source that can be added into a pipeline.
     """
@@ -42,6 +54,12 @@ class GStreamerSource:
         - `video_height`: (`int`) The height (in pixels) of the video.
         - `name`: (`str`) The name of the source element for debugging.
         """
+        super().__init__(name)
+        self.source_uri = source_uri
+        self.video_format = video_format
+        self.video_width = video_width
+        self.video_height = video_height
+
         if os.path.exists(source_uri):
             # Source is a file (note that this will have to be updated if we ever support devices found in /dev/*)
             source_element = (
@@ -70,15 +88,60 @@ class GStreamerSource:
             # f'video/x-raw, format={video_format}, width={video_width}, height={video_height} ! '
         )
 
+class GStreamerPreprocess(Element):
+    def __init__(self, so_fpath: str, name="pre-process") -> None:
+        super().__init__(name)
+        raise NotImplementedError()
+
+class GStreamerModel(Element):
+    def __init__(self, hef_fpath: str, batch_size: int, name="model") -> None:
+        super().__init__(name)
+        self.hef_fpath = hef_fpath
+        self.batch_size = batch_size
+
+        batch_size = str(batch_size)
+
+        if not os.path.isfile(self.hef_fpath):
+            raise FileNotFoundError(f"Cannot find the given hef file: {hef_fpath}")
+
+        self.element_pipeline = (
+            f'queue name=f"{name}_queue_model_scale" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            f'videoscale name={name}_videoscale n-threads=2 qos=false ! '
+            f'queue name=f"{name}_queue_model_aspect" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            f'video/x-raw, pixel-aspect-ratio=1/1 ! '
+            f'videoconvert name={name}_videoconvert n-threads=2 ! '
+            f'queue name=f"{name}_queue_model_hailo" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            f'hailonet name={name}_hailonet hef-path={hef_fpath} batch-size={batch_size} {additional_params} force-writable=true ! '
+        )
+    
+class GStreamerPostprocess(Element):
+    def __init__(self, so_fpath: str, function_name: str, name="post-process") -> None:
+        super().__init__(name)
+        self.so_fpath = so_fpath
+        self.function_name = function_name
+
+        if not os.path.isfile(so_fpath):
+            raise FileNotFoundError(f"Cannot find the given .so file: {so_fpath}")
+
+        self.element_pipeline = (
+            f'queue name=f"{name}_queue_postproc_filter" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            f'hailofilter name={name}_hailofilter so-path={self.so_fpath} {config_str} function-name={self.function_name} qos=false '
+        )
+
+class GStreamerSink(Element):
+    def __init__(self, name="sink") -> None:
+        super().__init__(name)
+        raise NotImplementedError()
+
 class GStreamerApp:
-    def __init__(self, name: str, source: GStreamerSource) -> None:
+    def __init__(self, name: str, *elements) -> None:
         self.name = name
-        self.source = source
+        self.elements = elements
         self.repeat_on_end_of_stream = False
 
         # Create the pipeline
         Gst.init(None)
-        pipeline_string = " ! ".join([self.source.element_pipeline])
+        pipeline_string = " ! ".join([e.element_pipeline for e in self.elements if e.element_pipeline is not None])
         self.pipeline = Gst.parse_launch(pipeline_string)
 
         # Save dot file (if desired)
@@ -152,19 +215,6 @@ class GStreamerApp:
                 log.debug(f"Received a bus message that we do not handle on pipeline {self.name}: {message.get_details()}")
                 return True
 
-    def shutdown(self, signum=None, frame=None):
-        """
-        Clean shutdown.
-        """
-        self.pipeline.set_state(Gst.State.PAUSED)
-        GLib.usleep(100000)  # 0.1 second delay
-
-        self.pipeline.set_state(Gst.State.READY)
-        GLib.usleep(100000)  # 0.1 second delay
-
-        self.pipeline.set_state(Gst.State.NULL)
-        GLib.idle_add(self.loop.quit)
-
     def run(self, repeat_on_end_of_stream=False):
         """
         Run the pipeline. Argument `repeat_on_end_of_stream` most likely only makes
@@ -188,6 +238,26 @@ class GStreamerApp:
 
         # Clean up
         self.pipeline.set_state(Gst.State.NULL)
+
+    def shutdown(self, signum=None, frame=None):
+        """
+        Clean shutdown.
+        """
+        self.pipeline.set_state(Gst.State.PAUSED)
+        GLib.usleep(100000)  # 0.1 second delay
+
+        self.pipeline.set_state(Gst.State.READY)
+        GLib.usleep(100000)  # 0.1 second delay
+
+        self.pipeline.set_state(Gst.State.NULL)
+        GLib.idle_add(self.loop.quit)
+
+    def rewind(self):
+        """
+        Attempt to rewind the pipeline to the beginning.
+        """
+        if self.pipeline.get_state() == Gst.State.PLAYING:
+            self.pipeline.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH, 0)
 
 def configure(config: Dict[str, Any]):
     """

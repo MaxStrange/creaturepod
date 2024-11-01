@@ -12,14 +12,20 @@ class AICoprocessor:
     for controlling the AI coprocessor in the system.
     """
     def __init__(self, config: Dict[str, Any]) -> None:
-        pass
+        self.source = None
+        self.preprocess = None
+        self.model = None
+        self.postprocess = None
+        self.sink = None
+        self.pipeline = None
 
     def shutdown(self):
         """
         Clean shutdown function.
         """
-        # TODO
-        pass
+        if self.pipeline is not None:
+            self.pipeline.shutdown()
+            self.pipeline = None
 
     def set_source(self, source_uri: str) -> Exception|None:
         """
@@ -36,6 +42,9 @@ class AICoprocessor:
 
     def set_preprocess_function(self, preproc_fun):
         """
+        TODO: Decide on the API for this. Probably want it to be compiled into a
+              GStreamer element instead of an arbitrary Python function that we have to wrap
+              in an appsink/src.
         """
         pass
 
@@ -46,6 +55,9 @@ class AICoprocessor:
 
     def set_postprocess_function(self, postproc_fun):
         """
+        TODO: Decide on the API for this. Probably want it to be compiled into a
+              GStreamer element instead of an arbitrary Python function that we have to wrap
+              in an appsink/src.
         """
         pass
 
@@ -54,12 +66,19 @@ class AICoprocessor:
         """
         pass
 
-    def start(self):
+    def start(self, loop=False):
         """
+        Start the pipeline.
         """
-        pass
+        if self.pipeline is None:
+            self.pipeline = gstreamer_utils.GStreamerApp("hailo-pipeline", self.source, self.preprocess, self.model, self.postprocess, self.sink)
+
+        self.pipeline.run(repeat_on_end_of_stream=loop)
 
     def stop(self):
         """
+        Stop the pipeline.
         """
-        pass
+        if self.pipeline is not None:
+            self.pipeline.shutdown()
+            self.pipeline.rewind()
