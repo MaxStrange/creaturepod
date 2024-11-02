@@ -16,6 +16,7 @@ import os
 import collections
 
 # TODO: Add audio support
+# TODO: Double check the exclamation marks
 
 # Some default parameters for the gst queues. These can be overridden by the application configuration.
 QueueParams = collections.namedtuple("QueueParams", "max_buffers max_bytes max_time leaky")
@@ -65,13 +66,13 @@ class GStreamerSource(Element):
             source_element = (
                 f'filesrc location="{source_uri}" name={name} ! '
                 f'queue name=f"{name}_queue_dec264" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
-                f'qtdemux ! h264parse ! avdec_h264 max-threads=2 ! '
+                f'qtdemux ! h264parse ! avdec_h264 max-threads=2'
             )
         elif source_uri == "cam0" or source_uri == "cam1":
             # Source is CSI camera interface
              source_element = (
                 f'libcamerasrc name={name} ! '
-                f'video/x-raw, format={video_format}, width={video_width}, height={video_height} ! '
+                f'video/x-raw, format={video_format}, width={video_width}, height={video_height}'
             )
         else:
             # RTSP camera or something. Not currently supported.
@@ -79,13 +80,12 @@ class GStreamerSource(Element):
 
         # TODO: Remove elements here that we don't need/want. E.g., the videoscale and videoconvert portions don't seem to do anything. Verify and remove them.
         self.element_pipeline = (
-            f'{source_element} '
+            f'{source_element} ! '
             f'queue name=f"{name}_queue_scale" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
             f'videoscale name={name}_videoscale n-threads=2 ! '
             f'queue name=f"{name}_queue_convert" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
             f'videoconvert n-threads=3 name={name}_convert qos=false ! '
-            f'video/x-raw, format={video_format}, pixel-aspect-ratio=1/1 ! '
-            # f'video/x-raw, format={video_format}, width={video_width}, height={video_height} ! '
+            f'video/x-raw, format={video_format}, pixel-aspect-ratio=1/1 '
         )
 
 class GStreamerPreprocess(Element):
@@ -105,38 +105,80 @@ class GStreamerModel(Element):
             raise FileNotFoundError(f"Cannot find the given hef file: {hef_fpath}")
 
         self.element_pipeline = (
+            # Wrapper (pre-)
+            f'queue name=f"{name}_queue_model_input" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            # TODO: No exclamation mark after this for some reason. Maybe it is declaring an element that will be used several times?
+            f'hailocropper name={name}_model_crop so-path={whole_buffer_crop_so} function-name=create_crops use-letterbox=true resize-method=inter-area internal-offset=true '
+            # TODO: No exclamation mark after this for some reason. Maybe it is declaring an element that will be used several times?
+            f'hailoaggregator name={name}_model_agg '
+            f'{name}_model_crop. ! '
+            f'queue name=f"{name}_queue_model_bypass" leaky={QUEUE_PARAMS.leaky} max-size-buffers={bypass_max_size_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            # TODO: No exclamation mark after this for some reason. Maybe it is declaring an element that will be used several times?
+            f'{name}_model_agg.sink_0 '
+            f'{name}_model_crop. ! '
+
+            # Inference proper
             f'queue name=f"{name}_queue_model_scale" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
             f'videoscale name={name}_videoscale n-threads=2 qos=false ! '
             f'queue name=f"{name}_queue_model_aspect" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
             f'video/x-raw, pixel-aspect-ratio=1/1 ! '
             f'videoconvert name={name}_videoconvert n-threads=2 ! '
             f'queue name=f"{name}_queue_model_hailo" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
-            f'hailonet name={name}_hailonet hef-path={hef_fpath} batch-size={batch_size} {additional_params} force-writable=true ! '
+            f'hailonet name={name}_hailonet hef-path={hef_fpath} batch-size={batch_size} {additional_params} force-writable=true '
         )
     
-class GStreamerPostprocess(Element):
-    def __init__(self, so_fpath: str, function_name: str, name="post-process") -> None:
+class GStreamerHailoPostprocess(Element):
+    def __init__(self, so_fpath: str, function_name: str, config_fpath=None, name="ai-post-process") -> None:
         super().__init__(name)
         self.so_fpath = so_fpath
         self.function_name = function_name
+        self.config_fpath = config_fpath
 
         if not os.path.isfile(so_fpath):
             raise FileNotFoundError(f"Cannot find the given .so file: {so_fpath}")
 
+        if config_fpath is not None and not os.path.isfile(config_fpath):
+            raise FileNotFoundError(f"Cannot find the given configuration file: {config_fpath}")
+
+        config_str = "" if self.config_fpath is None else f"config-path={self.config_fpath}"
+
         self.element_pipeline = (
             f'queue name=f"{name}_queue_postproc_filter" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
-            f'hailofilter name={name}_hailofilter so-path={self.so_fpath} {config_str} function-name={self.function_name} qos=false '
+            f'hailofilter name={name}_hailofilter so-path={self.so_fpath} {config_str} function-name={self.function_name} qos=false ! '
+
+            # Wrapper (post-)
+            # TODO: No exclamation mark after this for some reason. Maybe it is declaring an element that will be used several times?
+            f'{name}_model_agg.sink_1 '
+            f'{name}_model_agg. ! '
+            f'queue name=f"{name}_queue_postproc_output" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} '
         )
 
-class GStreamerSink(Element):
-    def __init__(self, name="sink") -> None:
+class GStreamerCustomPostprocess(Element):
+    def __init__(self, name="post-process") -> None:
         super().__init__(name)
         raise NotImplementedError()
+
+class GStreamerSink(Element):
+    def __init__(self, sink_uris: List[str]|str, name="sink") -> None:
+        """
+        Accepts a list of sink URIs or a single one.
+        """
+        super().__init__(name)
+        if issubclass(type(sink_uris), str):
+            # Only one item
+            sink_uris = [sink_uris]
+
+        self.element_pipeline = ""
+        for uri in sink_uris:
+            # TODO: Check if the URI looks like a file path. If so, we can try to create the file and us it as one of the sinks.
+            # TODO: Check if the URI looks like a URL or IP address. If so, we can try RTSP.
+            # TODO: Check if the URI is a display device. If so, we will draw to the display.
+            pass
 
 class GStreamerApp:
     def __init__(self, name: str, *elements) -> None:
         self.name = name
-        self.elements = elements
+        self.elements = [e for e in elements if e is not None]
         self.repeat_on_end_of_stream = False
 
         # Create the pipeline
