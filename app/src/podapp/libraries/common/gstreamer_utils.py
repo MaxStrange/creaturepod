@@ -50,7 +50,8 @@ class GStreamerSource(Element):
         ----
         - `source_uri`: (`str`) The URI for the source of video. A camera ID like 'cam0' as found
            in the appconfig YAML file will be treated as a Raspberry Pi camera module coming over the
-           corresponding (0 or 1) CSI port.
+           corresponding (0 or 1) CSI port. A string like 'rtsp:5000' will be treated as a udpsource running on
+           port 5000 that expects an RTSP stream.
         - `video_format`: (`str`) The format of the video. See the GStreamer pad documentation for your source.
         - `video_width`: (`int`) The width (in pixels) of the video.
         - `video_height`: (`int`) The height (in pixels) of the video.
@@ -78,10 +79,16 @@ class GStreamerSource(Element):
                 f'video/x-raw, format={video_format}, width={video_width}, height={video_height}'
             )
         else:
-            # RTSP camera or something. Not currently supported.
-            raise ValueError(f"Given a source_uri that is not supported: {source_uri}")
+            # RTSP stream
+            schema, port = source_uri.split(':')
+            source_element = (
+                f'udpsrc port={port} ! '
+                f'application/x-rtp,clock-rate=90000,payload=96 ! '
+                f'rtph264pdepay queue-delay=0 ! '
+                f'ffdec_h264 ! '
+                f'xvimagesink'
+            )
 
-        # TODO: Remove elements here that we don't need/want. E.g., the videoscale and videoconvert portions don't seem to do anything. Verify and remove them.
         self.element_pipeline = (
             f'{source_element} ! '
             f'queue name={name}_queue_scale leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
@@ -396,3 +403,26 @@ def source_uri_valid(source_uri: str) -> bool:
         return True
     else:
         return False
+
+def sink_uri_valid(sink_uri: str) -> bool:
+    """
+    Return whether the given sink URI is valid.
+    """
+    if sink_uri == "display":
+        return True
+    elif sink_uri.startswith("http") or sink_uri.startswith("rtsp"):
+        uri_parse = urllib.parse.urlparse(sink_uri)
+        ip_or_url, port = uri_parse.netloc.split(':')
+        try:
+            _ = int(port)
+        except ValueError:
+            return False
+        return ip_or_url != ""
+    else:
+        try:
+            f = open(sink_uri, 'wb')
+            f.close()
+            os.remove(sink_uri)
+        except Exception:
+            return False
+        return True

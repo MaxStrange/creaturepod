@@ -4,6 +4,7 @@ coprocessor.
 """
 from typing import Any
 from typing import Dict
+from typing import List
 from ..common import gstreamer_utils
 
 class AICoprocessor:
@@ -61,16 +62,25 @@ class AICoprocessor:
         """
         pass
 
-    def set_sink(self, sink):
+    def set_sinks(self, *sink_uris) -> Exception|None:
         """
+        Set the sinks for the AI processing pipeline.
+
+        `sink_uris`: (List of `str`) Each argument should be a URI for a sink. Either an RTSP
+        sink (e.g., "rtsp://192.168.1.1:5000"), the word "display", or a path to a file to save.
         """
-        pass
+        for uri in sink_uris:
+            if not gstreamer_utils.sink_uri_valid(uri):
+                return ValueError(f"Invalid sink URI: {uri}")
+
+        self.sink = gstreamer_utils.GStreamerSink(sink_uris)
 
     def start(self, loop=False):
         """
         Start the pipeline.
         """
         if self.pipeline is None:
+            # It is okay for some of these to be None (only source and sink are technically required to be non-None)
             self.pipeline = gstreamer_utils.GStreamerApp("hailo-pipeline", self.source, self.preprocess, self.model, self.postprocess, self.sink)
 
         self.pipeline.run(repeat_on_end_of_stream=loop)
