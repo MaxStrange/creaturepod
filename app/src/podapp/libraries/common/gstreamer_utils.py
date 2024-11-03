@@ -14,6 +14,7 @@ from gi.repository import GObject
 from gi.repository import Gst
 import os
 import collections
+import urllib
 
 # TODO: Add audio support
 # TODO: Double check the exclamation marks
@@ -65,8 +66,10 @@ class GStreamerSource(Element):
             # Source is a file (note that this will have to be updated if we ever support devices found in /dev/*)
             source_element = (
                 f'filesrc location="{source_uri}" name={name} ! '
-                f'queue name=f"{name}_queue_dec264" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
-                f'qtdemux ! h264parse ! avdec_h264 max-threads=2'
+                f'queue name={name}_queue_dec264 leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+                f'qtdemux ! '
+                f'h264parse ! '
+                f'avdec_h264 max-threads=2'
             )
         elif source_uri == "cam0" or source_uri == "cam1":
             # Source is CSI camera interface
@@ -81,9 +84,9 @@ class GStreamerSource(Element):
         # TODO: Remove elements here that we don't need/want. E.g., the videoscale and videoconvert portions don't seem to do anything. Verify and remove them.
         self.element_pipeline = (
             f'{source_element} ! '
-            f'queue name=f"{name}_queue_scale" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            f'queue name={name}_queue_scale leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
             f'videoscale name={name}_videoscale n-threads=2 ! '
-            f'queue name=f"{name}_queue_convert" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            f'queue name={name}_queue_convert leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
             f'videoconvert n-threads=3 name={name}_convert qos=false ! '
             f'video/x-raw, format={video_format}, pixel-aspect-ratio=1/1 '
         )
@@ -106,24 +109,23 @@ class GStreamerModel(Element):
 
         self.element_pipeline = (
             # Wrapper (pre-)
-            f'queue name=f"{name}_queue_model_input" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
-            # TODO: No exclamation mark after this for some reason. Maybe it is declaring an element that will be used several times?
-            f'hailocropper name={name}_model_crop so-path={whole_buffer_crop_so} function-name=create_crops use-letterbox=true resize-method=inter-area internal-offset=true '
-            # TODO: No exclamation mark after this for some reason. Maybe it is declaring an element that will be used several times?
-            f'hailoaggregator name={name}_model_agg '
-            f'{name}_model_crop. ! '
-            f'queue name=f"{name}_queue_model_bypass" leaky={QUEUE_PARAMS.leaky} max-size-buffers={bypass_max_size_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
-            # TODO: No exclamation mark after this for some reason. Maybe it is declaring an element that will be used several times?
-            f'{name}_model_agg.sink_0 '
-            f'{name}_model_crop. ! '
+            f'queue name=wrapper_queue_input leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            f'hailocropper name=wrapper_crop so-path={whole_buffer_crop_so} function-name=create_crops use-letterbox=true resize-method=inter-area internal-offset=true '
+            f'hailoaggregator name=wrapper_agg '
+            ## Wrapper Aggregator Sink 0 path
+            f'wrapper_crop. ! '
+            f'queue name=wrapper_queue_bypass leaky={QUEUE_PARAMS.leaky} max-size-buffers={bypass_max_size_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            f'wrapper_agg.sink_0 '
+            ## Wrapper Aggregator Sink 1 path (wraps the inference portion)
+            f'wrapper_crop. ! '
 
             # Inference proper
-            f'queue name=f"{name}_queue_model_scale" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            f'queue name={name}_queue_scale leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
             f'videoscale name={name}_videoscale n-threads=2 qos=false ! '
-            f'queue name=f"{name}_queue_model_aspect" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            f'queue name={name}_queue_aspect leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
             f'video/x-raw, pixel-aspect-ratio=1/1 ! '
             f'videoconvert name={name}_videoconvert n-threads=2 ! '
-            f'queue name=f"{name}_queue_model_hailo" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            f'queue name={name}_queue_hailo leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
             f'hailonet name={name}_hailonet hef-path={hef_fpath} batch-size={batch_size} {additional_params} force-writable=true '
         )
     
@@ -143,14 +145,15 @@ class GStreamerHailoPostprocess(Element):
         config_str = "" if self.config_fpath is None else f"config-path={self.config_fpath}"
 
         self.element_pipeline = (
-            f'queue name=f"{name}_queue_postproc_filter" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            f'queue name={name}_queue_filter leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
             f'hailofilter name={name}_hailofilter so-path={self.so_fpath} {config_str} function-name={self.function_name} qos=false ! '
 
             # Wrapper (post-)
-            # TODO: No exclamation mark after this for some reason. Maybe it is declaring an element that will be used several times?
-            f'{name}_model_agg.sink_1 '
-            f'{name}_model_agg. ! '
-            f'queue name=f"{name}_queue_postproc_output" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} '
+            ## Aggregator Sink 1 end
+            f'wrapper_agg.sink_1 '
+            ## Both paths now meet up here
+            f'wrapper_agg. ! '
+            f'queue name={name}_queue_postproc_output leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} '
         )
 
 class GStreamerCustomPostprocess(Element):
@@ -162,18 +165,50 @@ class GStreamerSink(Element):
     def __init__(self, sink_uris: List[str]|str, name="sink") -> None:
         """
         Accepts a list of sink URIs or a single one.
+
+        URIs should be endpoints. Either RTSP endpoints such as "rtsp://192.168.1.1:5000",
+        file paths such as "/path/to/out.h264",
+        or "display", in which case the screen is used.
         """
         super().__init__(name)
         if issubclass(type(sink_uris), str):
             # Only one item
             sink_uris = [sink_uris]
 
-        self.element_pipeline = ""
-        for uri in sink_uris:
-            # TODO: Check if the URI looks like a file path. If so, we can try to create the file and us it as one of the sinks.
-            # TODO: Check if the URI looks like a URL or IP address. If so, we can try RTSP.
-            # TODO: Check if the URI is a display device. If so, we will draw to the display.
-            pass
+        self.element_pipeline = (
+            f'queue name={name}_queue_hailooverlay" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            f'hailooverlay name={name}_hailooverlay ! '
+            f'queue name={name}_queue_videoconvert leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            f'videoconvert name={name}_videoconvert n-threads=2 qos=false ! '
+            f'queue name={name}_display_queue leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+        )
+
+        for i, uri in enumerate(sink_uris):
+            if i == 0 and len(sink_uris) > 1:
+                self.element_pipeline += f'tee name={name}_tee ! '
+                self.element_pipeline += f'queue name={name}_tee_queue{i} leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            elif len(sink_uris) > 1:
+                self.element_pipeline += f' ! '
+                self.element_pipeline += f'{name}_tee. ! '
+                self.element_pipeline += f'queue name={name}_tee_queue{i} leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+
+            if uri.startswith("http") or uri.startswith("rtsp"):
+                # Treat as an RTSP endpoint
+                uri_parse = urllib.parse.urlparse(uri)
+                ip_or_url, port = uri_parse.netloc.split(':')
+                # TODO: Set the host and port on the udpsink
+                # TODO: Handle encryption
+                self.element_pipeline += f'ffenc_h264 ! '
+                self.element_pipeline += f'video/x-h264 ! '
+                self.element_pipeline += f'rtph264ppay ! '
+                self.element_pipeline += f'fpsdisplaysink name={name}_udpsink_with_fps video-sink=udpsink sync=true text-overlay=true signal-fps-measurements=true'
+            elif uri == "display":
+                # Display to screen
+                self.element_pipeline += f'fpsdisplaysink name={name}_xvimagesink_with_fps video-sink=xvimagesink sync=true text-overlay=true signal-fps-measurements=true'
+            else:
+                # Treat as a filesink
+                # TODO: Figure out how to tell the filesink what file to use
+                self.element_pipeline += f'fpsdisplaysink name={name}_filesink_with_fps video-sink=filesink sync=true text-overlay=true signal-fps-measurements=true'
 
 class GStreamerApp:
     def __init__(self, name: str, *elements) -> None:
