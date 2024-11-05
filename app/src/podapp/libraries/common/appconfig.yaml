@@ -9,7 +9,7 @@ pinconfig:
       physical: 11
     front-camera:
       # The 'id' as reported by Picamera2.global_camera_info() ; need to figure out the camera mux
-      id: "cam0"
+      id: "/mnt/c/Users/strangem/repos/creaturepod/app/out.h264"
       mux-active-level: "LOW"
     rear-camera:
       # The 'id' as reported by Picamera2.global_camera_info() ; need to figure out the camera mux

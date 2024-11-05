@@ -14,6 +14,6 @@ def load_config_file(fpath=DEFAULT_CONFIG_FILE_PATH) -> Dict[str, Any]:
     as a dict.
     """
     with open(fpath, 'r') as f:
-        raw = yaml.load(f)
+        raw = yaml.load(f, Loader=yaml.BaseLoader)
 
     return raw

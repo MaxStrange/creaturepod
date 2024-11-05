@@ -4,7 +4,6 @@ coprocessor.
 """
 from typing import Any
 from typing import Dict
-from typing import List
 from ..common import gstreamer_utils
 
 class AICoprocessor:

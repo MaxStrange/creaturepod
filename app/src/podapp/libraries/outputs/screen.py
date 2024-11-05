@@ -8,7 +8,6 @@ from typing import Tuple
 from ..common import error
 import re
 import subprocess
-import time
 
 class Display:
     """

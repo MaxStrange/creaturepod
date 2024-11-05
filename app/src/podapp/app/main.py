@@ -102,3 +102,6 @@ def main():
     print(f"  AI Module...........  {power_draw_hailo_only}")
     print(f"  Calculated Total....  {summed_total}")
     print(f"  Experimental Total..  {power_draw_experimental_total}")
+
+if __name__ == "__main__":
+    main()
