@@ -16,12 +16,13 @@ import os
 import collections
 import urllib
 
-# TODO: Add audio support
-# TODO: Double check the exclamation marks
-
 # Some default parameters for the gst queues. These can be overridden by the application configuration.
 QueueParams = collections.namedtuple("QueueParams", "max_buffers max_bytes max_time leaky")
 QUEUE_PARAMS = QueueParams(max_buffers=3, max_bytes=0, max_time=0, leaky='no')
+
+# Some default parameters for the HAILO-specific elements. These can be overridden by the application configuration.
+HailoParams = collections.namedtuple("HailoParams", "cropping_so_path")
+HAILO_PARAMS = HailoParams(cropping_so_path="/hailo/gstreamer-libs/libwhole_buffer.so")
 
 class Element:
     """
@@ -38,7 +39,7 @@ class GStreamerSource(Element):
     """
     A class to encapsulate a GStreamer source that can be added into a pipeline.
     """
-    def __init__(self, source_uri: str, video_format="RGB", video_width=640, video_height=640, name="source") -> None:
+    def __init__(self, source_uri: str, video_format="RGB", video_width=640, video_height=640, desired_video_format="RGB", desired_video_width=640, desired_video_height=640, name="source") -> None:
         """
         Create an instance of a GStreamerSource that can be added to a pipeline.
 
@@ -55,6 +56,9 @@ class GStreamerSource(Element):
         - `video_format`: (`str`) The format of the video. See the GStreamer pad documentation for your source.
         - `video_width`: (`int`) The width (in pixels) of the video.
         - `video_height`: (`int`) The height (in pixels) of the video.
+        - `desired_video_format`: (`str`) The desired format of the video. We convert to this if it is different from the source.
+        - `desired_video_width`: (`int`) The width (in pixels) desired. We convert to this if it is different from the source.
+        - `desired_video_height`: (`int`) The height (in pixels) desired. We convert to this if it is different from the source.
         - `name`: (`str`) The name of the source element for debugging.
         """
         super().__init__(name)
@@ -62,40 +66,69 @@ class GStreamerSource(Element):
         self.video_format = video_format
         self.video_width = video_width
         self.video_height = video_height
+        self.desired_video_format = desired_video_format
+        self.desired_video_width = desired_video_width
+        self.desired_video_height = desired_video_height
 
         if os.path.exists(source_uri):
             # Source is a file (note that this will have to be updated if we ever support devices found in /dev/*)
             source_element = (
+                # Grab frames from the file
                 f'filesrc location="{source_uri}" name={name} ! '
+                # Demux the sound and the video
+                f'qtdemux name={name}_qtdemux '
+
+                # Audio is currently handled in a fairly naive manner
+                f'{name}_qtdemux.audio_0 ! queue ! decodebin ! audioconvert ! vorbisenc ! audioresample name="source_audio_channel" '
+
+                # Video portion of the pipeline:
+                f'{name}_qtdemux.video_0 ! '
+                # Push frames into a queue. This means the filesrc and demuxer are running in their own thread, while a new thread is used
+                # for the next block (up to the next queue)
                 f'queue name={name}_queue_dec264 leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
-                f'qtdemux ! '
+                # Parse the incoming H.264 stream (inputs video/x-h264 and outputs video/x-h264 that has appropriate alignment and formatting for downstream elements)
                 f'h264parse ! '
+                # Decode H.264 stream (inputs video/x-h264 and outputs video/x-raw).
+                # TODO There are several arguments here that can be tuned. Check them if need be.
                 f'avdec_h264 max-threads=2'
             )
         elif source_uri == "cam0" or source_uri == "cam1":
             # Source is CSI camera interface
              source_element = (
-                f'libcamerasrc name={name} ! '
-                f'video/x-raw, format={video_format}, width={video_width}, height={video_height}'
+                # First, pull the audio stream and convert to vorbis encoding
+                f'alsasrc ! queue ! audioconvert ! vorbisenc ! audioresample name="source_audio_channel" '
+
+                # Pull camera data from the Raspberry Pi camera device.
+                # Note that this element is not part of a normal GStreamer installation
+                # and is not documented as part of GStreamer. The element is provided as part of libcamera.
+                f'libcamerasrc name={name} camera-name={source_uri} ! video/x-raw, format={video_format}, width={video_width}, height={video_height} '
             )
         else:
             # RTSP stream
+            # TODO: Handle decryption/authentication
             schema, port = source_uri.split(':')
             source_element = (
-                f'udpsrc port={port} ! '
-                f'application/x-rtp,clock-rate=90000,payload=96 ! '
+                # Pull data from UDP on the given port.
+                # TODO: There is a good chance you will have to muck around with the caps on this element
+                # since the caps are left undetermined (they should be delivered out of band by SDP)
+                # TODO: Look into rtspsrc instead
+                # TODO: Need to add audio
+                f'udpsrc port={port} ! application/x-rtp,clock-rate=90000,payload=96 ! '
+                # Interpret the UDP source as RTP packets and extract H.264 video from them
                 f'rtph264pdepay queue-delay=0 ! '
-                f'ffdec_h264 ! '
-                f'xvimagesink'
+                # Decode H.264 to x-raw
+                f'avdec_h264 max-threads=2'
             )
 
         self.element_pipeline = (
+            # Source element (from above)
             f'{source_element} ! '
+            # Scale the video to whatever we need (as determined downstream)
             f'queue name={name}_queue_scale leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
-            f'videoscale name={name}_videoscale n-threads=2 ! '
+            f'videoscale name={name}_videoscale n-threads=2 ! video/x-raw, width={self.desired_video_width}, height={self.desired_video_height} ! '
+            # Convert the video to whatever video format
             f'queue name={name}_queue_convert leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
-            f'videoconvert n-threads=3 name={name}_convert qos=false ! '
-            f'video/x-raw, format={video_format}, pixel-aspect-ratio=1/1 '
+            f'videoconvert n-threads=3 name={name}_convert qos=false ! video/x-raw, format={self.desired_video_format}, pixel-aspect-ratio=1/1 '
         )
 
 class GStreamerPreprocess(Element):
@@ -115,25 +148,32 @@ class GStreamerModel(Element):
             raise FileNotFoundError(f"Cannot find the given hef file: {hef_fpath}")
 
         self.element_pipeline = (
-            # Wrapper (pre-)
+            # Wrapper (pre-). This portion of the pipeline is important for the HAILO stuff to add an overlay. It is not technically needed for inference.
+            ## https://github.com/hailo-ai/tappas/blob/master/docs/elements/hailo_cropper.rst
+            ## The cropper outputs unmodified frames on one pad and cropped frames on another.
             f'queue name=wrapper_queue_input leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
-            f'hailocropper name=wrapper_crop so-path={whole_buffer_crop_so} function-name=create_crops use-letterbox=true resize-method=inter-area internal-offset=true '
+            f'hailocropper name=wrapper_crop so-path={HAILO_PARAMS.cropping_so_path} function-name=create_crops use-letterbox=true resize-method=inter-area internal-offset=true '
+
+            ## https://github.com/hailo-ai/tappas/blob/master/docs/elements/hailo_aggregator.rst
+            ## The aggregator takes unmodified frames on one pad and inference overlays on another.
             f'hailoaggregator name=wrapper_agg '
             ## Wrapper Aggregator Sink 0 path
             f'wrapper_crop. ! '
-            f'queue name=wrapper_queue_bypass leaky={QUEUE_PARAMS.leaky} max-size-buffers={bypass_max_size_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+            f'queue name=wrapper_queue_bypass leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
             f'wrapper_agg.sink_0 '
+
             ## Wrapper Aggregator Sink 1 path (wraps the inference portion)
             f'wrapper_crop. ! '
-
             # Inference proper
+            ## Scale the video to whatever is required by the neural network
             f'queue name={name}_queue_scale leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
             f'videoscale name={name}_videoscale n-threads=2 qos=false ! '
+            ## Convert the video to whatever format is required by the neural network
             f'queue name={name}_queue_aspect leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
-            f'video/x-raw, pixel-aspect-ratio=1/1 ! '
-            f'videoconvert name={name}_videoconvert n-threads=2 ! '
+            f'videoconvert name={name}_videoconvert n-threads=2 ! video/x-raw, pixel-aspect-ratio=1/1 ! '
+            ## Feed into the neural network (which will run on the coprocessor); TODO: Make sure to use gst inspect on the Hailo elements to determine property options
             f'queue name={name}_queue_hailo leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
-            f'hailonet name={name}_hailonet hef-path={hef_fpath} batch-size={batch_size} {additional_params} force-writable=true '
+            f'hailonet name={name}_hailonet hef-path={hef_fpath} batch-size={batch_size} force-writable=true '
         )
     
 class GStreamerHailoPostprocess(Element):
@@ -152,11 +192,12 @@ class GStreamerHailoPostprocess(Element):
         config_str = "" if self.config_fpath is None else f"config-path={self.config_fpath}"
 
         self.element_pipeline = (
+            ## Filter: https://github.com/hailo-ai/tappas/blob/master/docs/elements/hailo_filter.rst
             f'queue name={name}_queue_filter leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
             f'hailofilter name={name}_hailofilter so-path={self.so_fpath} {config_str} function-name={self.function_name} qos=false ! '
 
             # Wrapper (post-)
-            ## Aggregator Sink 1 end
+            ## Aggregator Sink 1 end ; TODO: Check the docs to make sure I understand this syntax
             f'wrapper_agg.sink_1 '
             ## Both paths now meet up here
             f'wrapper_agg. ! '
@@ -183,11 +224,15 @@ class GStreamerSink(Element):
             sink_uris = [sink_uris]
 
         self.element_pipeline = (
+            # Draw overlays
             f'queue name={name}_queue_hailooverlay" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
             f'hailooverlay name={name}_hailooverlay ! '
+            # Convert to downstream sink format
             f'queue name={name}_queue_videoconvert leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
             f'videoconvert name={name}_videoconvert n-threads=2 qos=false ! '
-            f'queue name={name}_display_queue leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+
+            # Sink queue
+            f'queue name={name}_sink_queue leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
         )
 
         for i, uri in enumerate(sink_uris):
@@ -205,8 +250,7 @@ class GStreamerSink(Element):
                 ip_or_url, port = uri_parse.netloc.split(':')
                 # TODO: Set the host and port on the udpsink
                 # TODO: Handle encryption
-                self.element_pipeline += f'ffenc_h264 ! '
-                self.element_pipeline += f'video/x-h264 ! '
+                self.element_pipeline += f'ffenc_h264 ! video/x-h264 ! '
                 self.element_pipeline += f'rtph264ppay ! '
                 self.element_pipeline += f'fpsdisplaysink name={name}_udpsink_with_fps video-sink=udpsink sync=true text-overlay=true signal-fps-measurements=true'
             elif uri == "display":
@@ -367,6 +411,17 @@ def configure(config: Dict[str, Any]):
             os.environ["GST_DEBUG_DUMP_DOT_DIR"] = dpath
         else:
             log.warning(f"Config file's moduleconfig->gstreamer-utils->dot-graph->dpath does not point to a directory. Given {dpath}")
+
+    # HAILO-specific stuff
+    if 'hailo' in gstreamer_config:
+        hailo_config = gstreamer_config['hailo']
+        lib_folder_path = hailo_config.get('lib-folder-path', "/hailo/gstreamer-libs")
+        match hailo_config.get('cropping-algorithm', None):
+            case 'whole-buffer':
+                cropping_so_path = os.path.join(lib_folder_path, "libwhole_buffer.so")
+            case _:
+                cropping_so_path = os.pth.join(lib_folder_path, "libwhole_buffer.so")
+        HAILO_PARAMS = HailoParams(lib_folder_path)
 
 def disable_qos(pipeline):
     """

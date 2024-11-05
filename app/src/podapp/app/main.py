@@ -89,7 +89,7 @@ def main():
     hailoproc.inference_on_stream(stream_handle)
     power_draw_experimental_total = _read_power_number()
     hailoproc.stop()
-    front_camera.stop()
+    front_camera.shutdown()
     display.turn_off()
 
     # Clean up after ourselves

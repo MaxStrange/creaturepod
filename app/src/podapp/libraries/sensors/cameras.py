@@ -7,6 +7,7 @@ from picamera2 import Picamera2
 from typing import Any
 from typing import Dict
 from ..common import error
+from ..common import gstreamer_utils
 from ..common import log
 import RPi.GPIO as GPIO
 
@@ -72,10 +73,21 @@ class Camera:
         """
         self._switch_to_this_camera()
 
+        ## TODO: Test this way
         video_config = self.camera.create_video_configuration()
         self.camera.configure(video_config)
         encoder = H264Encoder(bitrate=10000000)
         self.camera.start_recording(encoder, fpath)
+        
+        ## TODO: But also test this way
+        #try:
+        #    source = gstreamer_utils.GStreamerSource(self.cam_id)
+        #    sink = gstreamer_utils.GStreamerSink(fpath)
+        #    self.pipeline = gstreamer_utils.GStreamerApp("camera-to-file", source, sink)
+        #    self.pipeline.run()
+        #except ValueError as e:
+        #    return ValueError(f"Cannot stream to file: {e}")
+
         return None
 
     def stop_streaming(self) -> Exception|None:
@@ -84,7 +96,12 @@ class Camera:
         """
         self._switch_to_this_camera()
 
+        ## TODO: Test this way
         self.camera.stop_recording()
+
+        ## TODO: But also test this way
+        #self.pipeline.shutdown()
+
         return None
 
 class FrontCamera(Camera):

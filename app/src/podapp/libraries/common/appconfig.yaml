@@ -56,6 +56,11 @@ moduleconfig:
     dot-graph:
       save: True
       dpath: "/logs"
+    hailo:
+      description: >
+        This section describes params for HAILO-specific GStreamer elements.
+      lib-folder-path: "/hailo/gstreamer-libs"
+      cropping-algorithm: "whole-buffer"
   logging:
     log-file-path: "/logs/creaturepod.txt"
     log-file-path-dev: "./creaturepod.txt"
