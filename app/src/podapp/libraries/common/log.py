@@ -68,11 +68,14 @@ def init(config: Dict[str, Any]):
     if log_fpath_invalid:
         warning(f"Configuration file's 'log-file-path' is invalid. Value given: {raw_fpath}")
 
+    logging.getLogger(LOGGER_NAME).setLevel(log_level)
+
 def enable_logging_to_console(config: Dict[str, Any]):
     """
     Enable logging to the console. Assumes that 'init' has been called already.
     """
-    handler = logging.StreamHandler()
-    handler.setLevel(logging.getLogger(LOGGER_NAME).level)
-    handler.setFormatter(logging.Formatter("[%(asctime)s:%(name)s:%(levelname)s]: %(message)s"))
-    logging.getLogger(LOGGER_NAME).addHandler(handler)
+    if config['moduleconfig']['logging']['log-to-console']:
+        handler = logging.StreamHandler()
+        handler.setLevel(logging.getLogger(LOGGER_NAME).level)
+        handler.setFormatter(logging.Formatter("[%(asctime)s:%(name)s:%(levelname)s]: %(message)s"))
+        logging.getLogger(LOGGER_NAME).addHandler(handler)

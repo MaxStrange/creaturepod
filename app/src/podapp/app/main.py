@@ -1,6 +1,7 @@
 """
 """
 from ..libraries.common import appconfig
+from ..libraries.common import gstreamer_utils
 from ..libraries.common import log
 from ..libraries.coprocessors import ai
 from ..libraries.coprocessors import mcu
@@ -39,6 +40,9 @@ def main():
     # Set up logging
     log.init(config)
     log.enable_logging_to_console(config)
+
+    # Initialize fundamental systems
+    gstreamer_utils.configure(config)
 
     # Initialize all the hardware singletons
     hailoproc = ai.AICoprocessor(config)

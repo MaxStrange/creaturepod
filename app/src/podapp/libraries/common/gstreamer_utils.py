@@ -70,8 +70,9 @@ class GStreamerSource(Element):
         self.desired_video_width = desired_video_width
         self.desired_video_height = desired_video_height
 
-        if os.path.exists(source_uri):
-            # Source is a file (note that this will have to be updated if we ever support devices found in /dev/*)
+        # TODO: Need to determine how best to decide what demuxer to use after the filesrc
+        if os.path.exists(source_uri) and os.path.splitext(source_uri)[-1].lower() == ".mov":
+            # QuickTime style
             source_element = (
                 # Grab frames from the file
                 f'filesrc location="{source_uri}" name={name} ! '
@@ -83,6 +84,20 @@ class GStreamerSource(Element):
 
                 # Video portion of the pipeline:
                 f'{name}_qtdemux.video_0 ! '
+                # Push frames into a queue. This means the filesrc and demuxer are running in their own thread, while a new thread is used
+                # for the next block (up to the next queue)
+                f'queue name={name}_queue_dec264 leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+                # Parse the incoming H.264 stream (inputs video/x-h264 and outputs video/x-h264 that has appropriate alignment and formatting for downstream elements)
+                f'h264parse ! '
+                # Decode H.264 stream (inputs video/x-h264 and outputs video/x-raw).
+                # TODO There are several arguments here that can be tuned. Check them if need be.
+                f'avdec_h264 max-threads=2'
+            )
+        elif os.path.exists(source_uri):
+            # Assume we have an h.264 raw video
+            source_element = (
+                # Grab frames from the file
+                f'filesrc location="{source_uri}" name={name} ! '
                 # Push frames into a queue. This means the filesrc and demuxer are running in their own thread, while a new thread is used
                 # for the next block (up to the next queue)
                 f'queue name={name}_queue_dec264 leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
@@ -210,7 +225,7 @@ class GStreamerCustomPostprocess(Element):
         raise NotImplementedError()
 
 class GStreamerSink(Element):
-    def __init__(self, sink_uris: List[str]|str, name="sink") -> None:
+    def __init__(self, sink_uris: List[str]|str, overlay=False, name="sink") -> None:
         """
         Accepts a list of sink URIs or a single one.
 
@@ -223,10 +238,15 @@ class GStreamerSink(Element):
             # Only one item
             sink_uris = [sink_uris]
 
-        self.element_pipeline = (
-            # Draw overlays
-            f'queue name={name}_queue_hailooverlay" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
-            f'hailooverlay name={name}_hailooverlay ! '
+        self.element_pipeline = ""
+        if overlay:
+            self.element_pipeline += (
+                # Draw overlays
+                f'queue name={name}_queue_hailooverlay" leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
+                f'hailooverlay name={name}_hailooverlay ! '
+            )
+
+        self.element_pipeline += (
             # Convert to downstream sink format
             f'queue name={name}_queue_videoconvert leaky={QUEUE_PARAMS.leaky} max-size-buffers={QUEUE_PARAMS.max_buffers} max-size-bytes={QUEUE_PARAMS.max_bytes} max-size-time={QUEUE_PARAMS.max_time} ! '
             f'videoconvert name={name}_videoconvert n-threads=2 qos=false ! '
@@ -252,14 +272,13 @@ class GStreamerSink(Element):
                 # TODO: Handle encryption
                 self.element_pipeline += f'ffenc_h264 ! video/x-h264 ! '
                 self.element_pipeline += f'rtph264ppay ! '
-                self.element_pipeline += f'fpsdisplaysink name={name}_udpsink_with_fps video-sink=udpsink sync=true text-overlay=true signal-fps-measurements=true'
+                self.element_pipeline += f'udpsink'  # TODO
             elif uri == "display":
                 # Display to screen
                 self.element_pipeline += f'fpsdisplaysink name={name}_xvimagesink_with_fps video-sink=xvimagesink sync=true text-overlay=true signal-fps-measurements=true'
             else:
                 # Treat as a filesink
-                # TODO: Figure out how to tell the filesink what file to use
-                self.element_pipeline += f'fpsdisplaysink name={name}_filesink_with_fps video-sink=filesink sync=true text-overlay=true signal-fps-measurements=true'
+                self.element_pipeline += f'filesink name={name}_filesink location={uri}'
 
 class GStreamerApp:
     def __init__(self, name: str, *elements) -> None:
@@ -273,7 +292,10 @@ class GStreamerApp:
         self.pipeline = Gst.parse_launch(pipeline_string)
 
         # Save dot file (if desired)
+        log.debug(f"Checking for GST_DEBUG_DUMP_DOT_DIR in environment.")
         if os.environ.get("GST_DEBUG_DUMP_DOT_DIR", None) is not None:
+            path = os.environ.get("GST_DEBUG_DUMP_DOT_DIR")
+            log.debug(f"Writing dot files to: {path}")
             Gst.debug_bin_to_dot_file(self.pipeline, Gst.DebugGraphDetails.ALL, self.name)
 
         # Create the mainloop
@@ -340,7 +362,6 @@ class GStreamerApp:
                 return True
             case _:
                 # There are a ton of possible message types. Mostly just ignore them and pretend like we handled them.
-                log.debug(f"Received a bus message that we do not handle on pipeline {self.name}: {message.get_details()}")
                 return True
 
     def run(self, repeat_on_end_of_stream=False):
@@ -397,6 +418,7 @@ def configure(config: Dict[str, Any]):
     gstreamer_config = config['moduleconfig']['gstreamer-utils']
 
     # Queue params
+    global QUEUE_PARAMS
     if 'queue-params' in gstreamer_config:
         leaky = gstreamer_config['queue-params'].get('leaky', QUEUE_PARAMS.leaky)
         max_buffers = gstreamer_config['queue-params'].get('max-buffers', QUEUE_PARAMS.max_buffers)
@@ -405,9 +427,12 @@ def configure(config: Dict[str, Any]):
         QUEUE_PARAMS = QueueParams(leaky=leaky, max_buffers=max_buffers, max_bytes=max_bytes, max_time=max_time)
 
     # Dot graph (the GStreamer pipeline can print itself to a dot file)
+    print(gstreamer_config['dot-graph'])
+    print(gstreamer_config['dot-graph']['save'])
     if 'dot-graph' in gstreamer_config and gstreamer_config['dot-graph']['save']:
         dpath = gstreamer_config['dot-graph']['dpath']
         if os.path.isdir(dpath):
+            log.info(f"Will save DOT files to directory: {dpath}")
             os.environ["GST_DEBUG_DUMP_DOT_DIR"] = dpath
         else:
             log.warning(f"Config file's moduleconfig->gstreamer-utils->dot-graph->dpath does not point to a directory. Given {dpath}")

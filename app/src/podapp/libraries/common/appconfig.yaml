@@ -55,7 +55,7 @@ moduleconfig:
       leaky: "no"
     dot-graph:
       save: True
-      dpath: "/logs"
+      dpath: "./"
     hailo:
       description: >
         This section describes params for HAILO-specific GStreamer elements.
@@ -66,5 +66,6 @@ moduleconfig:
     log-file-path-dev: "./creaturepod.txt"
     # DEBUG, INFO, WARNING, ERROR
     log-level: "DEBUG"
+    log-to-console: True
   screen:
     timeout-seconds: 5
