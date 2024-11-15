@@ -4,7 +4,13 @@ coprocessor.
 """
 from typing import Any
 from typing import Dict
-from ..common import gstreamer_utils
+from ..gstreamer_utils import app as gst_app
+from ..gstreamer_utils import model as gst_model
+from ..gstreamer_utils import postproc as gst_postproc
+from ..gstreamer_utils import preproc as gst_preproc
+from ..gstreamer_utils import sink as gst_sink
+from ..gstreamer_utils import source as gst_source
+from ..gstreamer_utils import utils as gst_utils
 
 class AICoprocessor:
     """
@@ -12,12 +18,7 @@ class AICoprocessor:
     for controlling the AI coprocessor in the system.
     """
     def __init__(self, config: Dict[str, Any]) -> None:
-        self.source = None
-        self.preprocess = None
-        self.model = None
-        self.postprocess = None
-        self.sink = None
-        self.pipeline = None
+        self.clear()
 
     def shutdown(self):
         """
@@ -27,6 +28,17 @@ class AICoprocessor:
             self.pipeline.shutdown()
             self.pipeline = None
 
+    def clear(self) -> None:
+        """
+        Clear all configured pipeline elements.
+        """
+        self.source = None
+        self.preprocess = None
+        self.model = None
+        self.postprocess = None
+        self.sink = None
+        self.pipeline = None
+
     def set_source(self, source_uri: str) -> Exception|None:
         """
         Set the source of the AI processing pipeline.
@@ -35,10 +47,10 @@ class AICoprocessor:
         in the appconfig YAML file will be treated as a Raspberry Pi camera module coming over the
         corresponding (0 or 1) CSI port.
         """
-        if not gstreamer_utils.source_uri_valid(source_uri):
+        if not gst_utils.source_uri_valid(source_uri):
             return ValueError(f"Invalid source URI: {source_uri}")
 
-        self.source = gstreamer_utils.GStreamerSource(source_uri)
+        self.source = gst_source.GStreamerSource(source_uri)
 
     def set_preprocess_function(self, preproc_fun):
         """
@@ -69,10 +81,10 @@ class AICoprocessor:
         sink (e.g., "rtsp://192.168.1.1:5000"), the word "display", or a path to a file to save.
         """
         for uri in sink_uris:
-            if not gstreamer_utils.sink_uri_valid(uri):
+            if not gst_utils.sink_uri_valid(uri):
                 return ValueError(f"Invalid sink URI: {uri}")
 
-        self.sink = gstreamer_utils.GStreamerSink(sink_uris)
+        self.sink = gst_sink.GStreamerSink(sink_uris)
 
     def start(self, loop=False):
         """
@@ -80,7 +92,7 @@ class AICoprocessor:
         """
         if self.pipeline is None:
             # It is okay for some of these to be None (only source and sink are technically required to be non-None)
-            self.pipeline = gstreamer_utils.GStreamerApp("hailo-pipeline", self.source, self.preprocess, self.model, self.postprocess, self.sink)
+            self.pipeline = gst_app.GStreamerApp("hailo-pipeline", self.source, self.preprocess, self.model, self.postprocess, self.sink)
 
         self.pipeline.run(repeat_on_end_of_stream=loop)
 

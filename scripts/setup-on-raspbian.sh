@@ -54,5 +54,9 @@ cd ../
 # Install Hailo
 echo "dtparam=pciex1_gen=3" | sudo tee -a /boot/firmware/config.txt > /dev/null
 
+# Add I2C and SPI by uncommenting some lines in the config.txt
+sudo sed -i 's/#dtparam=i2c_arm=on/dtparam=i2c_arm=on' /boot/firmware/config.txt
+sudo sed -i 's/#dtparam=spi=on/dtparam=spi=on' /boot/firmware/config.txt
+
 # Reboot
 echo "Done. Some changes require a reboot to take effect."

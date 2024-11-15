@@ -1,18 +1,17 @@
 """
 """
-from ..libraries.common import appconfig
-from ..libraries.common import gstreamer_utils
-from ..libraries.common import log
-from ..libraries.coprocessors import ai
-from ..libraries.coprocessors import mcu
-from ..libraries.outputs import leds
-from ..libraries.outputs import screen
-from ..libraries.sensors import cameras
 from typing import Any
 from typing import List
 import functools
 import os
 import signal
+from ..libraries.common import appconfig
+from ..libraries.common import log
+from ..libraries.gstreamer_utils import utils as gst_utils
+from ..libraries.coprocessors import ai
+from ..libraries.outputs import leds
+from ..libraries.outputs import screen
+from ..libraries.sensors import cameras
 
 def _clean_exit(hardware_objects: List[Any]):
     """
@@ -42,7 +41,7 @@ def main():
     log.enable_logging_to_console(config)
 
     # Initialize fundamental systems
-    gstreamer_utils.configure(config)
+    gst_utils.configure(config)
 
     # Initialize all the hardware singletons
     hailoproc = ai.AICoprocessor(config)
@@ -82,16 +81,48 @@ def main():
         log.error(f"Error when trying to stop the camera: {err}")
 
     ## AI Module
-    hailoproc.load_model("./TODO")
-    hailoproc.inference_on_file(video_fpath, loop=True)
+    err = hailoproc.set_source(video_fpath)
+    if err:
+        log.error(f"Could not set the AI pipeline source URI: {err}")
+
+    err = hailoproc.set_model("TODO")
+    if err:
+        log.error(f"Could not set the AI pipeline model: {err}")
+
+    inference_overlaid_fpath = "./scratch-video-overlaid.h264"
+    err = hailoproc.set_sinks(inference_overlaid_fpath)
+    if err:
+        log.error(f"Could not set the AI pipeline sink URI: {err}")
+
+    hailoproc.start(loop=True)
     power_draw_hailo_only = _read_power_number()
     hailoproc.stop()
 
     ## All at once
-    display.turn_on()
-    stream_handle = front_camera.stream_to_coprocessor()
-    hailoproc.inference_on_stream(stream_handle)
+    ### Display
+    err = display.turn_on()
+    if err:
+        log.error(f"Cannot turn on display: {err}")
+
+    ### AI and camera
+    err = hailoproc.set_source(front_camera.cam_id)
+    if err:
+        log.error(f"Could not set the AI pipeline source URI: {err}")
+
+    err = hailoproc.set_model("TODO")
+    if err:
+        log.error(f"Could not set the AI pipeline model: {err}")
+
+    err = hailoproc.set_sinks(inference_overlaid_fpath)
+    if err:
+        log.error(f"Could not set the AI pipeline sink URI: {err}")
+
+    hailoproc.start()
+
+    ### Read power measurement
     power_draw_experimental_total = _read_power_number()
+
+    ### Turn everything off
     hailoproc.stop()
     front_camera.shutdown()
     display.turn_off()

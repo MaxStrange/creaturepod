@@ -4,10 +4,11 @@ for the cameras in the system.
 """
 from typing import Any
 from typing import Dict
-from ..common import error
-from ..common import gstreamer_utils
 from ..common import log
 from ..outputs import gpio
+from ..gstreamer_utils import app as gst_app
+from ..gstreamer_utils import source as gst_source
+from ..gstreamer_utils import sink as gst_sink
 
 try:
     from picamera2.encoders import H264Encoder
@@ -94,9 +95,9 @@ class Camera:
             encoder = H264Encoder(bitrate=10000000)
             self.camera.start_recording(encoder, fpath)
         else:
-            source = gstreamer_utils.GStreamerSource(self.cam_id)
-            sink = gstreamer_utils.GStreamerSink(fpath)
-            self.pipeline = gstreamer_utils.GStreamerApp("camera-to-file", source, sink)
+            source = gst_source.GStreamerSource(self.cam_id)
+            sink = gst_sink.GStreamerSink(fpath)
+            self.pipeline = gst_app.GStreamerApp("camera-to-file", source, sink)
             self.pipeline.run()
 
         return None
