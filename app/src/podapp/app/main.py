@@ -85,7 +85,7 @@ def main():
     if err:
         log.error(f"Could not set the AI pipeline source URI: {err}")
 
-    err = hailoproc.set_model("TODO")
+    err = hailoproc.set_model(ai.AIModelType.OBJECT_DETECTION_YOLO_V8)
     if err:
         log.error(f"Could not set the AI pipeline model: {err}")
 
@@ -109,7 +109,7 @@ def main():
     if err:
         log.error(f"Could not set the AI pipeline source URI: {err}")
 
-    err = hailoproc.set_model("TODO")
+    err = hailoproc.set_model(ai.AIModelType.INSTANCE_SEGMENTATION)
     if err:
         log.error(f"Could not set the AI pipeline model: {err}")
 
