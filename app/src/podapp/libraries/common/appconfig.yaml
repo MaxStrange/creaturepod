@@ -61,6 +61,7 @@ moduleconfig:
         This section describes params for HAILO-specific GStreamer elements.
       lib-folder-path: "/hailo/gstreamer-libs"
       cropping-algorithm: "whole-buffer"
+      base-model-folder-path: "/hailo/TODO"
   logging:
     log-file-path: "/logs/creaturepod.txt"
     log-file-path-dev: "./creaturepod.txt"

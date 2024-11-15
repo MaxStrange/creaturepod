@@ -2,6 +2,7 @@
 This module provides high-level API functions for the AI
 coprocessor.
 """
+import enum
 from typing import Any
 from typing import Dict
 from ..gstreamer_utils import app as gst_app
@@ -11,6 +12,16 @@ from ..gstreamer_utils import preproc as gst_preproc
 from ..gstreamer_utils import sink as gst_sink
 from ..gstreamer_utils import source as gst_source
 from ..gstreamer_utils import utils as gst_utils
+
+class AIModelType(enum.StrEnum):
+    """
+    The allowed AI models.
+
+    THE VALUES MUST MATCH THE NAMES OF CONFIGURATION CLASSES IN gstreamer_utils/model.py!
+    """
+    OBJECT_DETECTION_YOLO_V8 = "ObjectDetectionYoloV8"
+    INSTANCE_SEGMENTATION    = "InstanceSegmentation"
+    POSE_ESTIMATION          = "PoseEstimation"
 
 class AICoprocessor:
     """
@@ -52,26 +63,20 @@ class AICoprocessor:
 
         self.source = gst_source.GStreamerSource(source_uri)
 
-    def set_preprocess_function(self, preproc_fun):
+    def set_model(self, model: AIModelType) -> Exception|None:
         """
-        TODO: Decide on the API for this. Probably want it to be compiled into a
-              GStreamer element instead of an arbitrary Python function that we have to wrap
-              in an appsink/src.
+        Set the pipeline's AI model configuration.
         """
-        pass
+        if model not in AIModelType:
+            return ValueError(f"Invalid model type given: {model}")
 
-    def set_model(model_fpath: str):
-        """
-        """
-        pass
+        # Create the model configuration by mapping the enum's str to a data class in gst_model
+        model_config = getattr(gst_model, model.value)()
 
-    def set_postprocess_function(self, postproc_fun):
-        """
-        TODO: Decide on the API for this. Probably want it to be compiled into a
-              GStreamer element instead of an arbitrary Python function that we have to wrap
-              in an appsink/src.
-        """
-        pass
+        # Set the model portion of the pipeline
+        self.preprocess = gst_preproc.GStreamerPreprocess(model_config)
+        self.model = gst_model.GStreamerModel(model_config)
+        self.postprocess = gst_postproc.GStreamerHailoPostprocess(model_config)
 
     def set_sinks(self, *sink_uris) -> Exception|None:
         """

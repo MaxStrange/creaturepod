@@ -1,16 +1,17 @@
 import os
 from . import element
+from . import model
 from . import utils
 
 class GStreamerHailoPostprocess(element.Element):
-    def __init__(self, so_fpath: str, function_name: str, config_fpath=None, name="ai-post-process") -> None:
+    def __init__(self, model_config: model.AIModelConfiguration, name="ai-post-process") -> None:
         super().__init__(name)
-        self.so_fpath = so_fpath
-        self.function_name = function_name
-        self.config_fpath = config_fpath
+        self.so_fpath = os.path.join(utils.HailoParams.TODO, model_config.post_process_so_name)
+        self.function_name = model_config.post_process_so_function
+        self.config_fpath = model_config.config_file_name if hasattr(model_config, 'config_file_name') else None
 
-        if not os.path.isfile(so_fpath):
-            raise FileNotFoundError(f"Cannot find the given .so file: {so_fpath}")
+        if not os.path.isfile(self.so_fpath):
+            raise FileNotFoundError(f"Cannot find the given .so file: {self.so_fpath}")
 
         if config_fpath is not None and not os.path.isfile(config_fpath):
             raise FileNotFoundError(f"Cannot find the given configuration file: {config_fpath}")

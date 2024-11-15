@@ -14,8 +14,8 @@ QueueParams = collections.namedtuple("QueueParams", "max_buffers max_bytes max_t
 QUEUE_PARAMS = QueueParams(max_buffers=3, max_bytes=0, max_time=0, leaky='no')
 
 # Some default parameters for the HAILO-specific elements. These can be overridden by the application configuration.
-HailoParams = collections.namedtuple("HailoParams", "cropping_so_path")
-HAILO_PARAMS = HailoParams(cropping_so_path="/hailo/gstreamer-libs/libwhole_buffer.so")
+HailoParams = collections.namedtuple("HailoParams", "cropping_so_path base_model_folder_path lib_folder_path")
+HAILO_PARAMS = HailoParams(cropping_so_path="/hailo/gstreamer-libs/libwhole_buffer.so", base_model_folder_path="/hailo/resources", lib_folder_path="/hailo/gstreamer-libs")
 
 def configure(config: Dict[str, Any]):
     """
@@ -47,15 +47,20 @@ def configure(config: Dict[str, Any]):
             log.warning(f"Config file's moduleconfig->gstreamer-utils->dot-graph->dpath does not point to a directory. Given {dpath}")
 
     # HAILO-specific stuff
+    global HAILO_PARAMS
     if 'hailo' in gstreamer_config:
         hailo_config = gstreamer_config['hailo']
+
         lib_folder_path = hailo_config.get('lib-folder-path', "/hailo/gstreamer-libs")
         match hailo_config.get('cropping-algorithm', None):
             case 'whole-buffer':
                 cropping_so_path = os.path.join(lib_folder_path, "libwhole_buffer.so")
             case _:
                 cropping_so_path = os.pth.join(lib_folder_path, "libwhole_buffer.so")
-        HAILO_PARAMS = HailoParams(lib_folder_path)
+
+        base_model_folder_path = hailo_config.get('base-model-folder-path', "/hailo/resources")
+
+        HAILO_PARAMS = HailoParams(cropping_so_path, base_model_folder_path, lib_folder_path)
 
 def disable_qos(pipeline):
     """
