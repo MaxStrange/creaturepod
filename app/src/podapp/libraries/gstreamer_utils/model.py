@@ -27,11 +27,11 @@ class AIModelConfiguration:
     # Post-processing shared object file name.
     post_process_so_name: str
 
-    # Post-processing function name
-    post_process_so_function: str = "filter"
-
     # Output format type
     output_format_type: str
+
+    # Post-processing function name
+    post_process_so_function: str = "filter"
 
 @dataclasses.dataclass
 class ObjectDetectionYoloV8(AIModelConfiguration):
