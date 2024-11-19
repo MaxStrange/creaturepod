@@ -18,6 +18,7 @@ class Display:
         self.touch_i2c_sda_pin = int(config['pinconfig']['screen']['i2c-sda']['pin'])
         self.touch_i2c_scl_pin = int(config['pinconfig']['screen']['i2c-scl']['pin'])
         self.timeout_seconds = int(config['moduleconfig']['screen']['timeout-seconds'])
+        self.dsi_id = config['pinconfig']['screen']['dsi']['id']
 
     def shutdown(self) -> None:
         """
@@ -30,14 +31,19 @@ class Display:
         """
         Is the screen on?
         """
-        pattern = re.compile("TODO")
-        p = subprocess.run("xset -q".split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=self.timeout_seconds, encoding='utf-8')
+        p = subprocess.run("wlr-randr", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=self.timeout_seconds, encoding='utf-8')
         if p.returncode == 0:
-            return (None, pattern.match(p.stdout).groupdict()['on_or_off'])
+            found_id = False
+            for line in p.stdout.splitlines():
+                if line.strip().startswith(self.dsi_id):
+                    found_id = True
+                if found_id and line.strip().startswith("Enabled:"):
+                    return (None, line.strip().split()[-1] == "yes")
+            return (error.SubprocessException(f"Could not find DSI identifier {self.dsi_id} in wlr-randr output. Output: {p.stdout}"), None)
         else:
             return (error.SubprocessException(f"Non-zero return code running 'xset -q': {p.stdout}"), None)
 
-    def off(self) -> bool:
+    def off(self) -> Tuple[Exception|None, bool|None]:
         """
         Is the screen off?
         """
@@ -48,7 +54,7 @@ class Display:
         """
         Turn on the screen. Does not block.
         """
-        p = subprocess.run("xset dpms force on".split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=self.timeout_seconds, encoding='utf-8')
+        p = subprocess.run(f"wlr-randr --output {self.dsi_id} --on".split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=self.timeout_seconds, encoding='utf-8')
         if p.returncode != 0:
             return error.SubprocessException(f"Non-zero return code running 'xset dpms force on': {p.stdout}")
         else:
@@ -58,7 +64,8 @@ class Display:
         """
         Turn off the screen. Does not block.
         """
-        p = subprocess.run("xset dpms force off".split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=self.timeout_seconds, encoding='utf-8')
+        # TODO: This does not turn off the touch interface
+        p = subprocess.run(f"wlr-randr --output {self.dsi_id} --off".split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=self.timeout_seconds, encoding='utf-8')
         if p.returncode != 0:
             return error.SubprocessException(f"Non-zero return code running 'xset dpms force off': {p.stdout}")
         else:

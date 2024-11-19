@@ -17,11 +17,11 @@ class AIModelType(enum.StrEnum):
     """
     The allowed AI models.
 
-    THE VALUES MUST MATCH THE NAMES OF CONFIGURATION CLASSES IN gstreamer_utils/model.py!
+    THE VALUES MUST MATCH THE NAMES OF CONFIGURATION DICTS IN gstreamer_utils/model.py!
     """
-    OBJECT_DETECTION_YOLO_V8 = "ObjectDetectionYoloV8"
-    INSTANCE_SEGMENTATION    = "InstanceSegmentation"
-    POSE_ESTIMATION          = "PoseEstimation"
+    OBJECT_DETECTION_YOLO_V8 = "OBJECT_DETECTION_YOLOV8"
+    INSTANCE_SEGMENTATION    = "INSTANCE_SEGMENTATION"
+    POSE_ESTIMATION          = "POSE_ESTIMATION"
 
 class AICoprocessor:
     """
@@ -71,10 +71,10 @@ class AICoprocessor:
             return ValueError(f"Invalid model type given: {model}")
 
         # Create the model configuration by mapping the enum's str to a data class in gst_model
-        model_config = getattr(gst_model, model.value)()
+        model_config = getattr(gst_model, model.value)
 
         # Set the model portion of the pipeline
-        self.preprocess = gst_preproc.GStreamerPreprocess(model_config)
+        self.preprocess = gst_preproc.GStreamerHailoPreprocess(model_config)
         self.model = gst_model.GStreamerModel(model_config)
         self.postprocess = gst_postproc.GStreamerHailoPostprocess(model_config)
 

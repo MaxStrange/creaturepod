@@ -47,8 +47,6 @@ sudo apt-get install -y \
                         gstreamer1.0-gtk3 \
                         gstreamer1.0-qt5 \
                         gstreamer1.0-pulseaudio
-#                        python3-gst-1.0
-#                        python3-smbus2
 
 # Install python3.12 version of gi
 python -m pip install --ignore-installed PyGObject

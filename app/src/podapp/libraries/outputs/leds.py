@@ -55,3 +55,10 @@ class LEDStrips:
     """
     def __init__(self, config: Dict[str, Any]) -> None:
         pass
+
+    def shutdown(self) -> None:
+        """
+        Clean shutdown function.
+        """
+        # TODO
+        pass

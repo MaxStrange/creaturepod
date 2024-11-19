@@ -1,93 +1,67 @@
-import dataclasses
 import os
+from typing import Any
+from typing import Dict
 from . import element
 from . import utils
 
-@dataclasses.dataclass
-class AIModelConfiguration:
-    """
-    Subclasses of this class should contain all the data needed for configuring
-    a particular AI model.
-    """
+# Default values for AI Model Configurations
+DEFAULT_AI_MODEL_CONFIGURATION = {
     # Batch size
-    batch_size: int
-
+    "batch_size": 2,
     # Width of input (or maybe the output?)
-    width: int
-
+    "width": 640,
     # Height of input (or maybe the output?)
-    height: int
-
+    "height": 640,
     # Color format (RGB, etc.)
-    color_format: str
+    "color_format": "RGB",
+    # Post-processing function name
+    "post_process_so_function": "filter",
 
     # Model .hef file name. File should be located in folder specified by appconfig['moduleconfig']['gstreamer-utils']['hailo']['base-model-folder-path']
-    hef_name: str
-
+    "hef_name": "",
     # Post-processing shared object file name.
-    post_process_so_name: str
-
+    "post_process_so_name": "",
     # Output format type
-    output_format_type: str
+    "output_format_type": "",
+}
 
-    # Post-processing function name
-    post_process_so_function: str = "filter"
-
-@dataclasses.dataclass
-class ObjectDetectionYoloV8(AIModelConfiguration):
-    """
-    Configuration for an object detection model,
-    specifically YOLOv8.
-    """
-    batch_size = 2
-    width = 640
-    height = 640
-    color_format = "RGB"
-    hef_name = "yolov8s_h8l.hef"
-    post_process_so_name = "libyolo_hailortpp_postprocess.so"
-    output_format_type = "HAILO_FORMAT_TYPE_FLOAT32"
+# Values for object detection with YOLOv8
+OBJECT_DETECTION_YOLOV8 = DEFAULT_AI_MODEL_CONFIGURATION | {
+    "hef_name": "yolov8s_h8l.hef",
+    "post_process_so_name": "libyolo_hailortpp_postprocess.so",
+    "output_format_type": "HAILO_FORMAT_TYPE_FLOAT32",
 
     # Non-maximal suppression score threshold
-    nms_score_threshold: float = 0.3
-
+    "nms_score_threshold": 0.3,
     # Non-maximal suppression intersection over union threshold
-    nms_iou_threshold: float = 0.45
+    "nms_iou_threshold": 0.45,
+}
 
-@dataclasses.dataclass
-class InstanceSegmentation(AIModelConfiguration):
-    """
-    Configuration for an instance segmentation model.
-    """
-    batch_size = 2
-    width = 640
-    height = 640
-    color_format = "RGB"
-    hef_name = "yolov5n_seg_h8l_mz.hef"
-    post_process_so_name = "libyolov5seg_postprocess.so"
-    post_process_so_function = "yolov5seg"
+# Values for instance segmentation
+INSTANCE_SEGMENTATION = DEFAULT_AI_MODEL_CONFIGURATION | {
+    "hef_name": "yolov5n_seg_h8l_mz.hef",
+    "post_process_so_name": "libyolov5seg_postprocess.so",
+    "post_process_so_function": "yolov5seg",
 
     # This model has a config file
-    config_file_name = "yolov5n_seg.json"
+    "config_file_name": "yolov5n_seg.json",
+}
 
-@dataclasses.dataclass
-class PoseEstimation(AIModelConfiguration):
-    """
-    Configuration for a pose estimation model.
-    """
-    batch_size = 2
-    width = 640
-    height = 640
-    color_format = "RGB"
-    hef_name = "yolov8s_pose_h8l.hef"
-    post_process_so_name = "libyolov8pose_postprocess.so"
+# Values for pose estimation
+POSE_ESTIMATION = DEFAULT_AI_MODEL_CONFIGURATION | {
+    "hef_name": "yolov8s_pose_h8l.hef",
+    "post_process_so_name": "libyolov8pose_postprocess.so",
+}
+
 
 class GStreamerModel(element.Element):
-    def __init__(self, model_config: AIModelConfiguration, name="model") -> None:
+    def __init__(self, model_config: Dict[str, Any], cropping_so_name="libwhole_buffer.so", name="model") -> None:
         super().__init__(name)
-        self.hef_fpath = os.path.join(utils.HailoParams.base_model_folder_path, model_config.hef_name)
-        self.batch_size = batch_size
+        self.hef_fpath = os.path.join(utils.HAILO_PARAMS.base_model_folder_path, model_config['hef_name'])
+        self.batch_size = model_config['batch_size']
+        self.cropping_so_path = os.path.join(utils.HAILO_PARAMS.cropping_algorithm_folder_path, cropping_so_name)
 
-        batch_size = str(batch_size)
+        batch_size = str(self.batch_size)
 
         if not os.path.isfile(self.hef_fpath):
             raise FileNotFoundError(f"Cannot find the given hef file: {self.hef_fpath}")
@@ -97,7 +71,7 @@ class GStreamerModel(element.Element):
             ## https://github.com/hailo-ai/tappas/blob/master/docs/elements/hailo_cropper.rst
             ## The cropper outputs unmodified frames on one pad and cropped frames on another.
             f'queue name=wrapper_queue_input leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
-            f'hailocropper name=wrapper_crop so-path={utils.HAILO_PARAMS.cropping_so_path} function-name=create_crops use-letterbox=true resize-method=inter-area internal-offset=true '
+            f'hailocropper name=wrapper_crop so-path={self.cropping_so_path} function-name=create_crops use-letterbox=true resize-method=inter-area internal-offset=true '
 
             ## https://github.com/hailo-ai/tappas/blob/master/docs/elements/hailo_aggregator.rst
             ## The aggregator takes unmodified frames on one pad and inference overlays on another.

@@ -14,8 +14,9 @@ QueueParams = collections.namedtuple("QueueParams", "max_buffers max_bytes max_t
 QUEUE_PARAMS = QueueParams(max_buffers=3, max_bytes=0, max_time=0, leaky='no')
 
 # Some default parameters for the HAILO-specific elements. These can be overridden by the application configuration.
-HailoParams = collections.namedtuple("HailoParams", "cropping_so_path base_model_folder_path lib_folder_path")
-HAILO_PARAMS = HailoParams(cropping_so_path="/hailo/gstreamer-libs/libwhole_buffer.so", base_model_folder_path="/hailo/resources", lib_folder_path="/hailo/gstreamer-libs")
+HailoParams = collections.namedtuple("HailoParams", "cropping_algorithm_folder_path base_model_folder_path post_process_folder_path")
+HAILO_PARAMS = HailoParams(cropping_algorithm_folder_path="/hailo/gstreamer-libs/libwhole_buffer.so", base_model_folder_path="/hailo/resources", post_process_folder_path="/hailo/gstreamer-libs")
+
 
 def configure(config: Dict[str, Any]):
     """
@@ -36,8 +37,6 @@ def configure(config: Dict[str, Any]):
         QUEUE_PARAMS = QueueParams(leaky=leaky, max_buffers=max_buffers, max_bytes=max_bytes, max_time=max_time)
 
     # Dot graph (the GStreamer pipeline can print itself to a dot file)
-    print(gstreamer_config['dot-graph'])
-    print(gstreamer_config['dot-graph']['save'])
     if 'dot-graph' in gstreamer_config and gstreamer_config['dot-graph']['save']:
         dpath = gstreamer_config['dot-graph']['dpath']
         if os.path.isdir(dpath):
@@ -50,17 +49,11 @@ def configure(config: Dict[str, Any]):
     global HAILO_PARAMS
     if 'hailo' in gstreamer_config:
         hailo_config = gstreamer_config['hailo']
+        cropping_algorithm_folder_path = hailo_config['cropping-algorithm-folder-path']
+        base_model_folder_path = hailo_config['base-model-folder-path']
+        post_process_folder_path = hailo_config['post-process-folder-path']
 
-        lib_folder_path = hailo_config.get('lib-folder-path', "/hailo/gstreamer-libs")
-        match hailo_config.get('cropping-algorithm', None):
-            case 'whole-buffer':
-                cropping_so_path = os.path.join(lib_folder_path, "libwhole_buffer.so")
-            case _:
-                cropping_so_path = os.pth.join(lib_folder_path, "libwhole_buffer.so")
-
-        base_model_folder_path = hailo_config.get('base-model-folder-path', "/hailo/resources")
-
-        HAILO_PARAMS = HailoParams(cropping_so_path, base_model_folder_path, lib_folder_path)
+        HAILO_PARAMS = HailoParams(cropping_algorithm_folder_path=cropping_algorithm_folder_path, base_model_folder_path=base_model_folder_path, post_process_folder_path=post_process_folder_path)
 
 def disable_qos(pipeline):
     """
@@ -94,6 +87,8 @@ def source_uri_valid(source_uri: str) -> bool:
     elif source_uri == "cam0":
         return True
     elif source_uri == "cam1":
+        return True
+    elif "imx219" in source_uri:  # TODO
         return True
     else:
         return False

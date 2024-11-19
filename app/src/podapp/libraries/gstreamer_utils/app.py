@@ -1,10 +1,13 @@
 import os
+import threading
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import GLib
 from gi.repository import Gst
 from ..common import log
 from . import utils
+
+# TODO: Think over how to make this asynchronous. It's kind of hacked together
 
 class GStreamerApp:
     def __init__(self, name: str, *elements) -> None:
@@ -14,7 +17,9 @@ class GStreamerApp:
 
         # Create the pipeline
         Gst.init(None)
-        pipeline_string = " ! ".join([e.element_pipeline for e in self.elements if e.element_pipeline is not None])
+        pipeline_string = " ! ".join([e.element_pipeline for e in self.elements if e.element_pipeline])
+        log.debug(f"Launching: {pipeline_string}")
+        print(pipeline_string)
         self.pipeline = Gst.parse_launch(pipeline_string)
 
         # Save dot file (if desired)
@@ -26,6 +31,7 @@ class GStreamerApp:
 
         # Create the mainloop
         self.loop = GLib.MainLoop()
+        self.loop_thread = None
 
     def _handle_end_of_stream(self) -> bool:
         """
@@ -74,7 +80,7 @@ class GStreamerApp:
             case Gst.MessageType.QOS:
                 # Quality of streaming notification
                 qos_element = message.src.get_name()
-                log.warning(f"Quality of service message received from pipeline {self.name}, element {qos_element}. Message: {message.get_details()}")
+                log.warning(f"Quality of service message received from pipeline {self.name}, element {qos_element}. Message: {message}")
                 return True
             case Gst.MessageType.STREAM_STATUS:
                 # A change in the stream status
@@ -84,7 +90,7 @@ class GStreamerApp:
             case Gst.MessageType.ELEMENT:
                 # Element-specific bus message. Potentially could want a handler.
                 # TODO: Add element-wise handlers?
-                log.info(f"Pipeline {self.name} received an element-specific message from {message.src.get_name()}: {message.get_details()}")
+                log.info(f"Pipeline {self.name} received an element-specific message from {message.src.get_name()}: {message}")
                 return True
             case _:
                 # There are a ton of possible message types. Mostly just ignore them and pretend like we handled them.
@@ -109,10 +115,8 @@ class GStreamerApp:
         self.pipeline.set_state(Gst.State.PLAYING)
 
         # Run the GLib event loop
-        self.loop.run()
-
-        # Clean up
-        self.pipeline.set_state(Gst.State.NULL)
+        self.loop_thread = threading.Thread(target=self.loop.run)
+        self.loop_thread.start()
 
     def shutdown(self, signum=None, frame=None):
         """
@@ -126,6 +130,9 @@ class GStreamerApp:
 
         self.pipeline.set_state(Gst.State.NULL)
         GLib.idle_add(self.loop.quit)
+
+        if self.loop_thread is not None:
+            self.loop_thread.join()
 
     def rewind(self):
         """

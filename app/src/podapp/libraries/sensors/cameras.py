@@ -10,14 +10,6 @@ from ..gstreamer_utils import app as gst_app
 from ..gstreamer_utils import source as gst_source
 from ..gstreamer_utils import sink as gst_sink
 
-try:
-    from picamera2.encoders import H264Encoder
-    from picamera2 import Picamera2
-    PICAMERA_ENABLED = True
-except ImportError:
-    # Can't use picamera. Use GStreamer.
-    PICAMERA_ENABLED = False
-
 # TODO: This whole module is going to need to be reconsidered when I get around to dealing with the camera mux
 
 class Camera:
@@ -25,76 +17,54 @@ class Camera:
     The `Camera` class provides high-level functionality for a camera hardware module.
     """
     def __init__(self, config: Dict[str, Any], config_name: str) -> None:
-        cam_id = str(config['pinconfig']['cameras'][config_name]['id'])
+        self.pipeline = None
 
+        self.cam_id = str(config['pinconfig']['cameras'][config_name]['id'])
         self.cam_mux = int(config['pinconfig']['cameras']['camera-mux']['pin'])
-
         level = str(config['pinconfig']['cameras'][config_name]['mux-active-level'])
         self.mux_level = gpio.Level.HIGH if level == 'HIGH' else gpio.Level.LOW
+        self.enabled = config['pinconfig']['cameras'][config_name]['enabled'].lower() == "true"
 
-        # Set up the camera mux pin
-        gpio.configure_pin(self.cam_mux, gpio.Direction.OUT)
-
-        if not PICAMERA_ENABLED:
-            self.model = None
-            self.location = None
-            self.rotation = None
-            self.cam_id = cam_id
-            self.camera = None
-        else:
-            # Collect camera info
-            gpio.output(self.cam_mux, gpio.Level.LOW)
-            attached_cameras_info0 = Picamera2.global_camera_info()
-            gpio.output(self.cam_mux, gpio.Level.HIGH)
-            attached_cameras_info1 = Picamera2.global_camera_info()
-
-            # Double check
-            attached_cameras_info = [attached_cameras_info0, attached_cameras_info1]
-            found = False
-            for i, cam in enumerate(attached_cameras_info):
-                if cam['Id'] == cam_id:
-                    self.model = cam['Model']
-                    self.location = cam['Location']
-                    self.rotation = cam['Rotation']
-                    self.cam_id = cam_id
-                    self.camera = Picamera2(i)
-                    found = True
-                    break
-
-            # Cannot use this camera.
-            if not found:
-                self.model = None
-                self.location = None
-                self.rotation = None
-                self.cam_id = None
-                self.camera = None
-                log.warning(f"Cannot find camera with ID {cam_id}")
+        if self.enabled:
+            # Set up the camera mux pin
+            gpio.configure_pin(self.cam_mux, gpio.Direction.OUT)
 
     def _switch_to_this_camera(self):
         """
         Switch to this camera.
         """
-        gpio.output(self.cam_mux, self.mux_level)
+        if self.enabled:
+            gpio.output(self.cam_mux, self.mux_level)
 
     def shutdown(self) -> None:
         """
         Clean shutdown function.
         """
-        self.stop_streaming()
-        gpio.cleanup(self.cam_mux)
+        if self.enabled:
+            self.stop_streaming()
+            gpio.deconfigure_pin(self.cam_mux)
+
+    def stream_to_display(self) -> Exception|None:
+        """
+        Asynchronously stream to the display.
+        """
+        if self.enabled:
+            self._switch_to_this_camera()
+
+            source = gst_source.GStreamerSource(self.cam_id)
+            sink = gst_sink.GStreamerSink("display")
+            self.pipeline = gst_app.GStreamerApp("camera-to-display", source, sink)
+            self.pipeline.run()
+
+        return None
 
     def stream_to_file(self, fpath: str) -> Exception|None:
         """
         Asynchronously stream to a file.
         """
-        self._switch_to_this_camera()
+        if self.enabled:
+            self._switch_to_this_camera()
 
-        if PICAMERA_ENABLED:
-            video_config = self.camera.create_video_configuration()
-            self.camera.configure(video_config)
-            encoder = H264Encoder(bitrate=10000000)
-            self.camera.start_recording(encoder, fpath)
-        else:
             source = gst_source.GStreamerSource(self.cam_id)
             sink = gst_sink.GStreamerSink(fpath)
             self.pipeline = gst_app.GStreamerApp("camera-to-file", source, sink)
@@ -106,12 +76,12 @@ class Camera:
         """
         Stop streaming.
         """
-        self._switch_to_this_camera()
+        if self.enabled:
+            self._switch_to_this_camera()
 
-        if PICAMERA_ENABLED:
-            self.camera.stop_recording()
-        else:
-            self.pipeline.shutdown()
+            if self.pipeline is not None:
+                self.pipeline.shutdown()
+                self.pipeline = None
 
         return None
 

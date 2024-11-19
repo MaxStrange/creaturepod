@@ -74,11 +74,12 @@ class GStreamerSource(element.Element):
                 # TODO There are several arguments here that can be tuned. Check them if need be.
                 f'avdec_h264 max-threads=2'
             )
-        elif source_uri == "cam0" or source_uri == "cam1":
+        elif source_uri == "cam0" or source_uri == "cam1" or "imx219" in source_uri:  # TODO
             # Source is CSI camera interface
              source_element = (
                 # First, pull the audio stream and convert to vorbis encoding
-                f'alsasrc ! queue ! audioconvert ! vorbisenc ! audioresample name="source_audio_channel" '
+# TODO: Audio
+#                f'alsasrc ! queue ! audioconvert ! vorbisenc ! audioresample name="source_audio_channel" '
 
                 # Pull camera data from the Raspberry Pi camera device.
                 # Note that this element is not part of a normal GStreamer installation

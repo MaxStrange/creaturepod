@@ -12,10 +12,12 @@ sudo apt-get install -y \
                         python3-picamera2 \
                         openocd \
                         hailo-all \
+                        libxcb-dpms0 \
                         libgstreamer1.0-dev \
                         libgstreamer-plugins-base1.0-dev \
                         libgstreamer-plugins-bad1.0-dev \
                         gstreamer1.0-plugins-base \
+                        gstreamer1.0-plugins-base-apps \
                         gstreamer1.0-plugins-good \
                         gstreamer1.0-plugins-bad \
                         gstreamer1.0-plugins-ugly \
@@ -28,6 +30,10 @@ sudo apt-get install -y \
                         gstreamer1.0-qt5 \
                         gstreamer1.0-pulseaudio \
                         python3-gst-1.0
+
+# Currently, the GPIO package does not support RPi5
+sudo apt-get remove python3-rpi.gpio
+pip install rpi-lgpio --break-system-packages
 
 # Install application and dependencies
 cd ../app
@@ -57,6 +63,9 @@ echo "dtparam=pciex1_gen=3" | sudo tee -a /boot/firmware/config.txt > /dev/null
 # Add I2C and SPI by uncommenting some lines in the config.txt
 sudo sed -i 's/#dtparam=i2c_arm=on/dtparam=i2c_arm=on' /boot/firmware/config.txt
 sudo sed -i 's/#dtparam=spi=on/dtparam=spi=on' /boot/firmware/config.txt
+
+# Add symlink for .so
+sudo ln -s /usr/lib/aarch64-linux-gnu/hailo/tappas/post_processes/libyolo_hailortpp_post.so /usr/lib/aarch64-linux-gnu/hailo/tappas/post_processes/libyolo_hailortpp_postprocess.so
 
 # Reboot
 echo "Done. Some changes require a reboot to take effect."

@@ -1,18 +1,33 @@
 import time
 import unittest
-from ..src.podapp.libraries.common import appconfig
+from . import testutils
 from ..src.podapp.libraries.coprocessors import ai
+from ..src.podapp.libraries.gstreamer_utils import utils as gst_utils
 
+@unittest.skipIf(testutils.in_wsl_mode(), "Running in WSL mode")
 class TestAI(unittest.TestCase):
     """
     Tests to make sure the AI coprocessor is working.
     """
-    sources = ["cam0", "cam1", "test_video.mp4", "test_video.h264", "test_video.mov"]  # TODO: Add RTSP test as well
-    sinks = ["test_output.h264", "display"]  # TODO: Add RTSP test as well
-
     def setUp(self):
-        self.config = appconfig.load_config_file()
+        self.config = testutils.load_config()
+        gst_utils.configure(self.config)
         self.coproc = ai.AICoprocessor(self.config)
+
+        # Set up sources
+        self.sources = []
+        if self.config['pinconfig']['cameras']['front-camera']['enabled']:
+            self.sources += [self.config['pinconfig']['cameras']['front-camera']['id']]
+        if self.config['pinconfig']['cameras']['rear-camera']['enabled']:
+            self.sources += [self.config['pinconfig']['cameras']['rear-camera']['id']]
+        #self.sources += ["test_video.mp4"]  # TODO
+        #self.sources += ["test_video.h264"] # TODO
+        #self.sources += ["test_video.mov"]  # TODO
+        # TODO RTSP
+
+        # Set up sinks
+        self.sinks = ["test_output.h264", "display"]  # TODO: RTSP
+
         return super().setUp()
 
     def tearDown(self):
