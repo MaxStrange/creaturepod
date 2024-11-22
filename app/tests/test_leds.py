@@ -9,6 +9,7 @@ class TestLEDs(unittest.TestCase):
     """
     def setUp(self) -> None:
         self.config = testutils.load_config()
+        testutils.initialize_logger(self.config)
         self.flashlight = leds.FlashLight(self.config)
         self.strips = leds.LEDStrips(self.config)
         return super().setUp()

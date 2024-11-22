@@ -10,6 +10,7 @@ class TestScreen(unittest.TestCase):
     """
     def setUp(self) -> None:
         self.config = testutils.load_config()
+        testutils.initialize_logger(self.config)
         self.display = screen.Display(self.config)
         return super().setUp()
 

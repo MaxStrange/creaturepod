@@ -66,7 +66,12 @@ class GStreamerModel(element.Element):
         if not os.path.isfile(self.hef_fpath):
             raise FileNotFoundError(f"Cannot find the given hef file: {self.hef_fpath}")
 
-        self.element_pipeline = (
+    @property
+    def element_pipeline(self) -> str:
+        """
+        The string representation of this element.
+        """
+        element_pipeline = (
             # Wrapper (pre-). This portion of the pipeline is important for the HAILO stuff to add an overlay. It is not technically needed for inference.
             ## https://github.com/hailo-ai/tappas/blob/master/docs/elements/hailo_cropper.rst
             ## The cropper outputs unmodified frames on one pad and cropped frames on another.
@@ -85,13 +90,14 @@ class GStreamerModel(element.Element):
             f'wrapper_crop. ! '
             # Inference proper
             ## Scale the video to whatever is required by the neural network
-            f'queue name={name}_queue_scale leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
-            f'videoscale name={name}_videoscale n-threads=2 qos=false ! '
+            f'queue name={self.name}_queue_scale leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
+            f'videoscale name={self.name}_videoscale n-threads=2 qos=false ! '
             ## Convert the video to whatever format is required by the neural network
-            f'queue name={name}_queue_aspect leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
-            f'videoconvert name={name}_videoconvert n-threads=2 ! video/x-raw, pixel-aspect-ratio=1/1 ! '
+            f'queue name={self.name}_queue_aspect leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
+            f'videoconvert name={self.name}_videoconvert n-threads=2 ! video/x-raw, pixel-aspect-ratio=1/1 ! '
             ## Feed into the neural network (which will run on the coprocessor); TODO: Make sure to use gst inspect on the Hailo elements to determine property options
-            f'queue name={name}_queue_hailo leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
-            f'hailonet name={name}_hailonet hef-path={self.hef_fpath} batch-size={batch_size} force-writable=true '
+            f'queue name={self.name}_queue_hailo leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
+            f'hailonet name={self.name}_hailonet hef-path={self.hef_fpath} batch-size={self.batch_size} force-writable=true '
         )
  
+        return element_pipeline

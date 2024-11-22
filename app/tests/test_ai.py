@@ -11,6 +11,7 @@ class TestAI(unittest.TestCase):
     """
     def setUp(self):
         self.config = testutils.load_config()
+        testutils.initialize_logger(self.config)
         gst_utils.configure(self.config)
         self.coproc = ai.AICoprocessor(self.config)
 
@@ -26,7 +27,8 @@ class TestAI(unittest.TestCase):
         # TODO RTSP
 
         # Set up sinks
-        self.sinks = ["test_output.h264", "display"]  # TODO: RTSP
+        #self.sinks = ["test_output.h264", "display"]  # TODO: RTSP
+        self.sinks = ["test_output.h264"]
 
         return super().setUp()
 

@@ -5,6 +5,7 @@ import subprocess
 from typing import Any
 from typing import Dict
 from ..src.podapp.libraries.common import appconfig
+from ..src.podapp.libraries.common import log
 
 def in_wsl_mode() -> bool:
     """
@@ -14,5 +15,14 @@ def in_wsl_mode() -> bool:
     p.check_returncode()
     return "microsoft" in p.stdout.lower()
 
+def initialize_logger(config: Dict[str, Any]):
+    """
+    Initialize the logger.
+    """
+    log.init(config)
+
 def load_config() -> Dict[str, Any]:
+    """
+    Load the configuration file.
+    """
     return appconfig.load_config_file()

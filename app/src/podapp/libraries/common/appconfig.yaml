@@ -68,9 +68,12 @@ moduleconfig:
       cropping-algorithm-folder-path: "/usr/lib/aarch64-linux-gnu/hailo/tappas/post_processes/cropping_algorithms"
       cropping-algorithm: "whole-buffer"
       base-model-folder-path: "/usr/share/hailo-models"
+    logging:
+      # MEMDUMP, TRACE, LOG, DEBUG, INFO, FIXME, WARNING, ERROR, NONE ; See https://gstreamer.freedesktop.org/documentation/tutorials/basic/debugging-tools.html?gi-language=python
+      level: "ERROR"
   logging:
-    log-file-path: "/logs/creaturepod.txt"
-    log-file-path-dev: "./creaturepod.txt"
+    log-file-path: "/logs/creaturepod.log"
+    log-file-path-dev: "./creaturepod.log"
     # DEBUG, INFO, WARNING, ERROR
     log-level: "DEBUG"
     log-to-console: True

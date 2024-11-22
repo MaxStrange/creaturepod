@@ -15,6 +15,7 @@ class TestCameras(unittest.TestCase):
 
     def setUp(self) -> None:
         self.config = testutils.load_config()
+        testutils.initialize_logger(self.config)
         gst_utils.configure(self.config)
         self.front_camera = cameras.FrontCamera(self.config)
         self.rear_camera = cameras.RearCamera(self.config)
