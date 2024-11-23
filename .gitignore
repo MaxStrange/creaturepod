@@ -160,4 +160,13 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+# Syncthing
+.stfolder/
+
+# VS Code
 .vscode/
+
+# Binary media files
+*.h264
+*.mov
+*.mp4

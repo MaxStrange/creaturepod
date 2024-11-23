@@ -6,13 +6,9 @@ class GStreamerSource(element.Element):
     """
     A class to encapsulate a GStreamer source that can be added into a pipeline.
     """
-    def __init__(self, source_uri: str, video_format="RGB", video_width=640, video_height=640, desired_video_format="RGB", desired_video_width=640, desired_video_height=640, name="source") -> None:
+    def __init__(self, source_uri: str, video_format="RGB", video_width=640, video_height=640, name="source") -> None:
         """
         Create an instance of a GStreamerSource that can be added to a pipeline.
-
-        Note that the arguments supplied to this element should be the ones that come out of the
-        source - not the desired ones. If you want to scale or otherwise adjust the video frames
-        after retrieving them from the source, you should do that in a preprocess element.
 
         Args
         ----
@@ -23,9 +19,6 @@ class GStreamerSource(element.Element):
         - `video_format`: (`str`) The format of the video. See the GStreamer pad documentation for your source.
         - `video_width`: (`int`) The width (in pixels) of the video.
         - `video_height`: (`int`) The height (in pixels) of the video.
-        - `desired_video_format`: (`str`) The desired format of the video. We convert to this if it is different from the source.
-        - `desired_video_width`: (`int`) The width (in pixels) desired. We convert to this if it is different from the source.
-        - `desired_video_height`: (`int`) The height (in pixels) desired. We convert to this if it is different from the source.
         - `name`: (`str`) The name of the source element for debugging.
         """
         super().__init__(name)
@@ -33,26 +26,34 @@ class GStreamerSource(element.Element):
         self.video_format = video_format
         self.video_width = video_width
         self.video_height = video_height
-        self.desired_video_format = desired_video_format
-        self.desired_video_width = desired_video_width
-        self.desired_video_height = desired_video_height
 
     @property
     def element_pipeline(self) -> str:
         """
         The string representation of this element.
         """
-        # TODO: Need to determine how best to decide what demuxer to use after the filesrc
-        if os.path.exists(self.source_uri) and os.path.splitext(self.source_uri)[-1].lower() == ".mov":
-            # QuickTime style
+        # Determine if there is audio to deal with
+        src_is_file = os.path.exists(self.source_uri)
+        if src_is_file:
+            _, extension = os.path.splitext(self.source_uri)
+            extension = extension.lower()
+            if extension == ".mov":
+                # Quicktime format. There is audio in this file.
+                audio_present = True
+            else:
+                # Assume no audio.
+                audio_present = False
+
+        if src_is_file and audio_present:
             source_element = (
                 # Grab frames from the file
                 f'filesrc location="{self.source_uri}" name={self.name} ! '
                 # Demux the sound and the video
                 f'qtdemux name={self.name}_qtdemux '
 
-                # Audio is currently handled in a fairly naive manner
-                f'{self.name}_qtdemux.audio_0 ! queue ! decodebin ! audioconvert ! vorbisenc ! audioresample name="source_audio_channel" '
+                # Audio portion of pipeline
+                # TODO: We don't really do anything with the audio yet.
+                f'{self.name}_qtdemux.audio_0 ! queue ! decodebin ! audioconvert ! vorbisenc ! audioresample name="{self.name}_audio_channel" ! fakeaudiosink '
 
                 # Video portion of the pipeline:
                 f'{self.name}_qtdemux.video_0 ! '
@@ -62,11 +63,9 @@ class GStreamerSource(element.Element):
                 # Parse the incoming H.264 stream (inputs video/x-h264 and outputs video/x-h264 that has appropriate alignment and formatting for downstream elements)
                 f'h264parse ! '
                 # Decode H.264 stream (inputs video/x-h264 and outputs video/x-raw).
-                # TODO There are several arguments here that can be tuned. Check them if need be.
-                f'avdec_h264 max-threads=2'
+                f'avdec_h264 max-threads=2 '
             )
-        elif os.path.exists(self.source_uri):
-            # Assume we have an h.264 raw video
+        elif src_is_file and not audio_present:
             source_element = (
                 # Grab frames from the file
                 f'filesrc location="{self.source_uri}" name={self.name} ! '
@@ -76,22 +75,9 @@ class GStreamerSource(element.Element):
                 # Parse the incoming H.264 stream (inputs video/x-h264 and outputs video/x-h264 that has appropriate alignment and formatting for downstream elements)
                 f'h264parse ! '
                 # Decode H.264 stream (inputs video/x-h264 and outputs video/x-raw).
-                # TODO There are several arguments here that can be tuned. Check them if need be.
-                f'avdec_h264 max-threads=2'
+                f'avdec_h264 max-threads=2 '
             )
-        elif self.source_uri == "cam0" or self.source_uri == "cam1" or "imx219" in self.source_uri:  # TODO
-            # Source is CSI camera interface
-             source_element = (
-                # First, pull the audio stream and convert to vorbis encoding
-# TODO: Audio
-#                f'alsasrc ! queue ! audioconvert ! vorbisenc ! audioresample name="source_audio_channel" '
-
-                # Pull camera data from the Raspberry Pi camera device.
-                # Note that this element is not part of a normal GStreamer installation
-                # and is not documented as part of GStreamer. The element is provided as part of libcamera.
-                f'libcamerasrc name={self.name} camera-name={self.source_uri} ! video/x-raw, format={self.video_format}, width={self.video_width}, height={self.video_height} '
-            )
-        else:
+        elif self.source_uri.startswith("http") or self.source_uri.startswith("rtsp"):
             # RTSP stream
             # TODO: Handle decryption/authentication
             schema, port = self.source_uri.split(':')
@@ -105,18 +91,20 @@ class GStreamerSource(element.Element):
                 # Interpret the UDP source as RTP packets and extract H.264 video from them
                 f'rtph264pdepay queue-delay=0 ! '
                 # Decode H.264 to x-raw
-                f'avdec_h264 max-threads=2'
+                f'avdec_h264 max-threads=2 '
+            )
+        else:
+            # Source is CSI camera interface
+            source_element = (
+                # Pull camera data from the Raspberry Pi camera device.
+                # Note that this element is not part of a normal GStreamer installation
+                # and is not documented as part of GStreamer. The element is provided as part of libcamera.
+                f'libcamerasrc name={self.name} camera-name={self.source_uri} ! video/x-raw, format={self.video_format}, width={self.video_width}, height={self.video_height} '
             )
 
         element_pipeline = (
             # Source element (from above)
-            f'{source_element} ! '
-            # Scale the video to whatever we need (as determined downstream)
-            f'queue name={self.name}_queue_scale leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
-            f'videoscale name={self.name}_videoscale n-threads=2 ! video/x-raw, width={self.desired_video_width}, height={self.desired_video_height} ! '
-            # Convert the video to whatever video format
-            f'queue name={self.name}_queue_convert leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
-            f'videoconvert n-threads=3 name={self.name}_convert qos=false ! video/x-raw, format={self.desired_video_format}, pixel-aspect-ratio=1/1 '
+            f'{source_element}'
         )
 
         return element_pipeline

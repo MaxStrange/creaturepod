@@ -21,7 +21,6 @@ class TestAI(unittest.TestCase):
             self.sources += [self.config['pinconfig']['cameras']['front-camera']['id']]
         if self.config['pinconfig']['cameras']['rear-camera']['enabled']:
             self.sources += [self.config['pinconfig']['cameras']['rear-camera']['id']]
-        #self.sources += ["test_video.mp4"]  # TODO
         #self.sources += ["test_video.h264"] # TODO
         #self.sources += ["test_video.mov"]  # TODO
         # TODO RTSP

@@ -25,16 +25,9 @@ class GStreamerHailoPostprocess(element.Element):
         """
         config_str = "" if self.config_fpath is None else f"config-path={self.config_fpath}"
         element_pipeline = (
-            ## Filter: https://github.com/hailo-ai/tappas/blob/master/docs/elements/hailo_filter.rst
+            # Filter: https://github.com/hailo-ai/tappas/blob/master/docs/elements/hailo_filter.rst
             f'queue name={self.name}_queue_filter leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
-            f'hailofilter name={self.name}_hailofilter so-path={self.so_fpath} {config_str} function-name={self.function_name} qos=false ! '
-
-            # Wrapper (post-)
-            ## Aggregator Sink 1 end ; TODO: Check the docs to make sure I understand this syntax
-            f'wrapper_agg.sink_1 '
-            ## Both paths now meet up here
-            f'wrapper_agg. ! '
-            f'queue name={self.name}_queue_postproc_output leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} '
+            f'hailofilter name={self.name}_hailofilter so-path={self.so_fpath} {config_str} function-name={self.function_name} qos=false '
         )
 
         return element_pipeline

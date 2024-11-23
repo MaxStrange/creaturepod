@@ -16,7 +16,7 @@ QUEUE_PARAMS = QueueParams(max_buffers=3, max_bytes=0, max_time=0, leaky='no')
 
 # Some default parameters for the HAILO-specific elements. These can be overridden by the application configuration.
 HailoParams = collections.namedtuple("HailoParams", "cropping_algorithm_folder_path base_model_folder_path post_process_folder_path")
-HAILO_PARAMS = HailoParams(cropping_algorithm_folder_path="/hailo/gstreamer-libs/libwhole_buffer.so", base_model_folder_path="/hailo/resources", post_process_folder_path="/hailo/gstreamer-libs")
+HAILO_PARAMS = HailoParams(cropping_algorithm_folder_path="UNINITIALIZED", base_model_folder_path="UNINITIALIZED", post_process_folder_path="UNINITIALIZED")
 
 
 def configure(config: Dict[str, Any]):
@@ -56,6 +56,7 @@ def configure(config: Dict[str, Any]):
 
         HAILO_PARAMS = HailoParams(cropping_algorithm_folder_path=cropping_algorithm_folder_path, base_model_folder_path=base_model_folder_path, post_process_folder_path=post_process_folder_path)
 
+    # GStreamer has separate logging parameters
     if 'logging' in gstreamer_config:
         log_level = gstreamer_config['logging']['level']
         match log_level.upper():
@@ -104,17 +105,30 @@ def disable_qos(pipeline):
             element.set_property('qos', False)
             log.debug(f"Set qos to False for {element.get_name()}")
 
+def remote_uri_valid(uri: str) -> bool:
+    """
+    Return whether the given URI is a valid remote URI.
+    """
+    if uri.startswith("http") or uri.startswith("rtsp"):
+        uri_parse = urllib.parse.urlparse(uri)
+        ip_or_url, port = uri_parse.netloc.split(':')
+        try:
+            _ = int(port)
+        except ValueError:
+            return False
+        return ip_or_url != ""
+    else:
+        return False
+
 def source_uri_valid(source_uri: str) -> bool:
     """
     Return whether the given source URI is valid.
     """
     if os.path.isfile(source_uri):
         return True
-    elif source_uri == "cam0":
+    elif "pcie" in source_uri:
         return True
-    elif source_uri == "cam1":
-        return True
-    elif "imx219" in source_uri:  # TODO
+    elif remote_uri_valid(source_uri):
         return True
     else:
         return False
@@ -125,14 +139,8 @@ def sink_uri_valid(sink_uri: str) -> bool:
     """
     if sink_uri == "display":
         return True
-    elif sink_uri.startswith("http") or sink_uri.startswith("rtsp"):
-        uri_parse = urllib.parse.urlparse(sink_uri)
-        ip_or_url, port = uri_parse.netloc.split(':')
-        try:
-            _ = int(port)
-        except ValueError:
-            return False
-        return ip_or_url != ""
+    elif remote_uri_valid(sink_uri):
+        return True
     else:
         try:
             f = open(sink_uri, 'wb')

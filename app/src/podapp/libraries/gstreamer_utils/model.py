@@ -8,7 +8,7 @@ from . import utils
 DEFAULT_AI_MODEL_CONFIGURATION = {
     # Batch size
     "batch_size": 2,
-    # Width of input (or maybe the output?)
+    # Width of input (or maybe the output?)  # TODO: Double check the resolution of output video to confirm whether this is input or output
     "width": 640,
     # Height of input (or maybe the output?)
     "height": 640,
@@ -30,6 +30,8 @@ OBJECT_DETECTION_YOLOV8 = DEFAULT_AI_MODEL_CONFIGURATION | {
     "hef_name": "yolov8s_h8l.hef",
     "post_process_so_name": "libyolo_hailortpp_postprocess.so",
     "output_format_type": "HAILO_FORMAT_TYPE_FLOAT32",
+    "width": 1536,
+    "height": 864,
 
     # Non-maximal suppression score threshold
     "nms_score_threshold": 0.3,
@@ -53,15 +55,13 @@ POSE_ESTIMATION = DEFAULT_AI_MODEL_CONFIGURATION | {
     "post_process_so_name": "libyolov8pose_postprocess.so",
 }
 
+# TODO: When/if we need a model cascade, make sure too look at hailocropper. Cropping folder path is stored in the HAILO PARAMS.
 
 class GStreamerModel(element.Element):
-    def __init__(self, model_config: Dict[str, Any], cropping_so_name="libwhole_buffer.so", name="model") -> None:
+    def __init__(self, model_config: Dict[str, Any], name="model") -> None:
         super().__init__(name)
         self.hef_fpath = os.path.join(utils.HAILO_PARAMS.base_model_folder_path, model_config['hef_name'])
         self.batch_size = model_config['batch_size']
-        self.cropping_so_path = os.path.join(utils.HAILO_PARAMS.cropping_algorithm_folder_path, cropping_so_name)
-
-        batch_size = str(self.batch_size)
 
         if not os.path.isfile(self.hef_fpath):
             raise FileNotFoundError(f"Cannot find the given hef file: {self.hef_fpath}")
@@ -72,30 +72,14 @@ class GStreamerModel(element.Element):
         The string representation of this element.
         """
         element_pipeline = (
-            # Wrapper (pre-). This portion of the pipeline is important for the HAILO stuff to add an overlay. It is not technically needed for inference.
-            ## https://github.com/hailo-ai/tappas/blob/master/docs/elements/hailo_cropper.rst
-            ## The cropper outputs unmodified frames on one pad and cropped frames on another.
-            f'queue name=wrapper_queue_input leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
-            f'hailocropper name=wrapper_crop so-path={self.cropping_so_path} function-name=create_crops use-letterbox=true resize-method=inter-area internal-offset=true '
-
-            ## https://github.com/hailo-ai/tappas/blob/master/docs/elements/hailo_aggregator.rst
-            ## The aggregator takes unmodified frames on one pad and inference overlays on another.
-            f'hailoaggregator name=wrapper_agg '
-            ## Wrapper Aggregator Sink 0 path
-            f'wrapper_crop. ! '
-            f'queue name=wrapper_queue_bypass leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
-            f'wrapper_agg.sink_0 '
-
-            ## Wrapper Aggregator Sink 1 path (wraps the inference portion)
-            f'wrapper_crop. ! '
-            # Inference proper
-            ## Scale the video to whatever is required by the neural network
+            # Scale the video to whatever is required by the neural network
             f'queue name={self.name}_queue_scale leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
             f'videoscale name={self.name}_videoscale n-threads=2 qos=false ! '
-            ## Convert the video to whatever format is required by the neural network
+            # Convert the video to whatever format is required by the neural network
             f'queue name={self.name}_queue_aspect leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
-            f'videoconvert name={self.name}_videoconvert n-threads=2 ! video/x-raw, pixel-aspect-ratio=1/1 ! '
-            ## Feed into the neural network (which will run on the coprocessor); TODO: Make sure to use gst inspect on the Hailo elements to determine property options
+            f'video/x-raw, pixel-aspect-ratio=1/1 ! '
+            f'videoconvert name={self.name}_videoconvert n-threads=2 ! '
+            # Feed into the neural network (which will run on the coprocessor)
             f'queue name={self.name}_queue_hailo leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
             f'hailonet name={self.name}_hailonet hef-path={self.hef_fpath} batch-size={self.batch_size} force-writable=true '
         )

@@ -66,7 +66,6 @@ moduleconfig:
         This section describes params for HAILO-specific GStreamer elements.
       post-process-folder-path: "/usr/lib/aarch64-linux-gnu/hailo/tappas/post_processes"
       cropping-algorithm-folder-path: "/usr/lib/aarch64-linux-gnu/hailo/tappas/post_processes/cropping_algorithms"
-      cropping-algorithm: "whole-buffer"
       base-model-folder-path: "/usr/share/hailo-models"
     logging:
       # MEMDUMP, TRACE, LOG, DEBUG, INFO, FIXME, WARNING, ERROR, NONE ; See https://gstreamer.freedesktop.org/documentation/tutorials/basic/debugging-tools.html?gi-language=python
