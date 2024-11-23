@@ -62,6 +62,7 @@ class GStreamerModel(element.Element):
         super().__init__(name)
         self.hef_fpath = os.path.join(utils.HAILO_PARAMS.base_model_folder_path, model_config['hef_name'])
         self.batch_size = model_config['batch_size']
+        self.color_format = model_config['color_format']
 
         if not os.path.isfile(self.hef_fpath):
             raise FileNotFoundError(f"Cannot find the given hef file: {self.hef_fpath}")
@@ -73,14 +74,20 @@ class GStreamerModel(element.Element):
         """
         element_pipeline = (
             # Scale the video to whatever is required by the neural network
-            f'queue name={self.name}_queue_scale leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
-            f'videoscale name={self.name}_videoscale n-threads=2 qos=false ! '
+            f'queue name={self.name}_queue_scale0 leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
+            f'videoscale name={self.name}_videoscale0 n-threads=2 qos=false ! '
             # Convert the video to whatever format is required by the neural network
+            f'queue name={self.name}_queue_convert leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
+            f'videoconvert name={self.name}_videoconvert0 n-threads=2 ! '
+            f'video/x-raw, format={self.color_format}, pixel-aspect-ratio=1/1 ! '
+            f'queue name={self.name}_queue_scale1 leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
+            f'videoscale name={self.name}_videoscale1 n-threads=2 qos=false ! '
             f'queue name={self.name}_queue_aspect leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
             f'video/x-raw, pixel-aspect-ratio=1/1 ! '
-            f'videoconvert name={self.name}_videoconvert n-threads=2 ! '
+            f'videoconvert name={self.name}_videoconvert1 n-threads=2 ! '
+
             # Feed into the neural network (which will run on the coprocessor)
-            f'queue name={self.name}_queue_hailo leaky={utils.QUEUE_PARAMS.leaky} max-size-buffers={utils.QUEUE_PARAMS.max_buffers} max-size-bytes={utils.QUEUE_PARAMS.max_bytes} max-size-time={utils.QUEUE_PARAMS.max_time} ! '
+            f'queue name=inference_hailonet_q leaky=no max-size-buffers=3 max-size-bytes=0 max-size-time=0 ! '
             f'hailonet name={self.name}_hailonet hef-path={self.hef_fpath} batch-size={self.batch_size} force-writable=true '
         )
  

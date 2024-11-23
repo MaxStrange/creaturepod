@@ -7,4 +7,3 @@ class Element:
     """
     def __init__(self, name: str) -> None:
         self.name = name
-        self.element_pipeline = None

@@ -99,7 +99,8 @@ class GStreamerSource(element.Element):
                 # Pull camera data from the Raspberry Pi camera device.
                 # Note that this element is not part of a normal GStreamer installation
                 # and is not documented as part of GStreamer. The element is provided as part of libcamera.
-                f'libcamerasrc name={self.name} camera-name={self.source_uri} ! video/x-raw, format={self.video_format}, width={self.video_width}, height={self.video_height} '
+                f'libcamerasrc name={self.name} camera-name={self.source_uri} ! '
+                f'video/x-raw, format={self.video_format}, width={self.video_width}, height={self.video_height} '
             )
 
         element_pipeline = (

@@ -18,8 +18,11 @@ class GStreamerApp:
         # Create the pipeline
         Gst.init(None)
         pipeline_string = " ! ".join([e.element_pipeline for e in self.elements if e.element_pipeline])
-        log.debug(f"Launching: {pipeline_string}")
+        log.debug(f"Parse-Launching: {pipeline_string}")
+        ######################
+        # TODO : REMOVE ME
         print(pipeline_string)
+        ######################
         self.pipeline = Gst.parse_launch(pipeline_string)
 
         # Save dot file (if desired)
@@ -138,5 +141,10 @@ class GStreamerApp:
         """
         Attempt to rewind the pipeline to the beginning.
         """
-        if self.pipeline.get_state() == Gst.State.PLAYING:
+        timeout_s = 3
+        state = self.pipeline.get_state(timeout_s * Gst.SECOND)
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print("!!!!!!!!!!!!!!!!!!!!!!!! STATE:", state)
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        if state == Gst.State.PLAYING:
             self.pipeline.seek_simple(Gst.Format.TIME, Gst.SeekFlags.FLUSH, 0)

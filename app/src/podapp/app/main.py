@@ -55,28 +55,38 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
 
     # For now, run a simple sequence to test the power draw
+    print("TURNING OFF DISPLAY...")
+    err = display.turn_off()
+    if err:
+        log.error(f"Error when turning off the display: {err}")
+   
+    print("IDLING...")
     power_draw_idle = _read_power_number()
 
     ## Screen
+    print("TURNING ON SCREEN...")
     err = display.turn_on()
     if err:
         log.error(f"Error when turning on the display: {err}")
 
     power_draw_screen_only = _read_power_number()
 
+    print("TURNING OFF DISPLAY...")
     err = display.turn_off()
     if err:
         log.error(f"Error when turning off the display: {err}")
 
     ## Camera
+    print("STREAMING CAMERA TO FILE...")
     video_fpath = "./scratch-video.h264"
-    err = front_camera.stream_to_file(video_fpath)
+    err = rear_camera.stream_to_file(video_fpath)
     if err:
         log.error(f"Error when trying to stream the camera output to a file: {err}")
 
     power_draw_camera_only = _read_power_number()
 
-    err = front_camera.stop_streaming()
+    print("STOP STREAMING...")
+    err = rear_camera.stop_streaming()
     if err:
         log.error(f"Error when trying to stop the camera: {err}")
 
@@ -94,22 +104,30 @@ def main():
     if err:
         log.error(f"Could not set the AI pipeline sink URI: {err}")
 
+    print("SETTING AI PARAMETERS:")
+    print(f"  SOURCE: {video_fpath}")
+    print(f"  MODEL:  {ai.AIModelType.OBJECT_DETECTION_YOLO_V8}")
+    print(f"  SINKS:  {inference_overlaid_fpath}")
+
+    print("STARTING MODEL PIPELINE...")
     hailoproc.start(loop=True)
     power_draw_hailo_only = _read_power_number()
+    print("STOPPING MODEL PIPELINE...")
     hailoproc.stop()
 
     ## All at once
     ### Display
+    print("TURNING ON DISPLAY...")
     err = display.turn_on()
     if err:
         log.error(f"Cannot turn on display: {err}")
 
     ### AI and camera
-    err = hailoproc.set_source(front_camera.cam_id)
+    err = hailoproc.set_source(rear_camera.cam_id)
     if err:
         log.error(f"Could not set the AI pipeline source URI: {err}")
 
-    err = hailoproc.set_model(ai.AIModelType.INSTANCE_SEGMENTATION)
+    err = hailoproc.set_model(ai.AIModelType.OBJECT_DETECTION_YOLO_V8)
     if err:
         log.error(f"Could not set the AI pipeline model: {err}")
 
@@ -117,14 +135,21 @@ def main():
     if err:
         log.error(f"Could not set the AI pipeline sink URI: {err}")
 
+    print("SETTING AI PARAMETERS:")
+    print(f"  SOURCE: {rear_camera.cam_id}")
+    print(f"  MODEL:  {ai.AIModelType.OBJECT_DETECTION_YOLO_V8}")
+    print(f"  SINKS:  {inference_overlaid_fpath}")
+
+    print("STARTING MODEL PIPELINE...")
     hailoproc.start()
 
     ### Read power measurement
     power_draw_experimental_total = _read_power_number()
 
     ### Turn everything off
+    print("TURNING EVERYTHING OFF...")
     hailoproc.stop()
-    front_camera.shutdown()
+    rear_camera.shutdown()
     display.turn_off()
 
     # Clean up after ourselves
