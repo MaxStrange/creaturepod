@@ -41,7 +41,7 @@ def configure(config: Dict[str, Any]):
     if 'dot-graph' in gstreamer_config and gstreamer_config['dot-graph']['save']:
         dpath = gstreamer_config['dot-graph']['dpath']
         if os.path.isdir(dpath):
-            log.info(f"Will save DOT files to directory: {dpath}")
+            log.debug(f"Will save DOT files to directory: {dpath}")
             os.environ["GST_DEBUG_DUMP_DOT_DIR"] = dpath
         else:
             log.warning(f"Config file's moduleconfig->gstreamer-utils->dot-graph->dpath does not point to a directory. Given {dpath}")

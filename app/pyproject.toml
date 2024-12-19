@@ -16,6 +16,7 @@ classifiers = [
 dependencies = [
     "PyQt6",
     "PyYAML",
+    "click>=8.1",
 ]
 license = {text = "MIT"}
 
@@ -26,3 +27,4 @@ rpi = [
 
 [project.scripts]
 podapp = "podapp:main"
+podapp-cli = "podapp:cli"

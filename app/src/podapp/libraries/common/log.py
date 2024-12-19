@@ -6,6 +6,7 @@ from typing import Dict
 import logging
 
 LOGGER_NAME = "CREATUREPOD"
+ALLOWED_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 
 def debug(msg: str):
     """
@@ -35,10 +36,9 @@ def init(config: Dict[str, Any]):
     """
     Initialize the logging set up.
     """
-    allowed_levels = ("DEBUG", "INFO", "WARNING", "ERROR")
     raw_log_level = str(config['moduleconfig']['logging']['log-level'])
     log_level = raw_log_level
-    if log_level not in allowed_levels:
+    if log_level not in ALLOWED_LEVELS:
         # Default to ERROR level
         log_level = "ERROR"
         loglevel_invalid = True
